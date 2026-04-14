@@ -11,6 +11,7 @@ web-build/
 *.orig.*
 web-build/
 .env
+firebase.js
 google-services.json
 GoogleService-Info.plist
 .claude/

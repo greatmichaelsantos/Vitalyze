@@ -1,6 +1,7 @@
 // ============================================================
-// FIREBASE CONFIGURATION
-// Replace the values below with your own Firebase project config.
+// FIREBASE CONFIGURATION — EXAMPLE FILE
+// Copy this file to firebase.js and replace all placeholder
+// values with your own Firebase project config.
 // Go to: Firebase Console → Project Settings → Your Apps → Config
 // ============================================================
 
@@ -14,13 +15,13 @@ import { Platform } from 'react-native';
 import { createAuth } from './firebaseAuth';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB7p4hGDxl5J3sSHYks0E19Ae2xhLOi_dE",
-  authDomain: "vitalyze-c5a0b.firebaseapp.com",
-  projectId: "vitalyze-c5a0b",
-  storageBucket: "vitalyze-c5a0b.firebasestorage.app",
-  messagingSenderId: "698928507545",
-  appId: "1:698928507545:web:5d3a6d5c3b739d9b512608",
-  measurementId: "G-EDVG0DW7SY"
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId:             "YOUR_APP_ID",
+  measurementId:     "YOUR_MEASUREMENT_ID",
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
