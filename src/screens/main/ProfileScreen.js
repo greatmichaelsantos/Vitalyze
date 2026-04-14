@@ -1,0 +1,837 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
+  Switch, Alert, StatusBar, SafeAreaView, ActivityIndicator,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { signOut } from 'firebase/auth';
+import { auth } from '../../../firebase';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import {
+  updateDisplayName, changePassword, deleteAccount, getFriendlyAuthError,
+} from '../../services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserProfile, updateUserDisplayName, deleteUserData } from '../../services/firestoreService';
+import { STORAGE_KEYS } from '../../utils/constants';
+import {
+  getNotificationPrefs,
+  saveNotificationPrefs,
+  registerForPushNotifications,
+} from '../../services/notificationService';
+import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
+
+export default function ProfileScreen({ navigation }) {
+  const { user, refreshUser }           = useAuth();
+  const { colors, isDark, toggleTheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const [profile,    setProfile]    = useState(null);
+  const [prefs,      setPrefs]      = useState(null);
+  const [saving,     setSaving]     = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const [nameModalOpen,     setNameModalOpen]     = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [deleteModalOpen,   setDeleteModalOpen]   = useState(false);
+  const [signOutModalOpen,  setSignOutModalOpen]  = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, notifPrefs] = await Promise.all([
+          getUserProfile(user.uid),
+          getNotificationPrefs(),
+        ]);
+        setProfile(p);
+        setPrefs(notifPrefs);
+      } catch {
+        setPrefs({ highRiskAlerts: true, dailyReminder: true, weeklySummary: true });
+      }
+    })();
+  }, [user.uid]);
+
+  const doSignOut = async () => {
+    setSignOutModalOpen(false);
+    setSigningOut(true);
+    try {
+      try {
+        await AsyncStorage.multiRemove([
+          STORAGE_KEYS.CACHED_INSIGHTS,
+          STORAGE_KEYS.PENDING_CHECKINS,
+          STORAGE_KEYS.NOTIFICATION_PREFS,
+        ]);
+      } catch { /* non-critical */ }
+      await signOut(auth);
+    } catch (e) {
+      setSigningOut(false);
+      Alert.alert('Sign Out Failed', e.message || 'Unable to sign out. Please try again.');
+    }
+  };
+
+  const updatePref = async (key, value) => {
+    const updated = { ...prefs, [key]: value };
+    setPrefs(updated);
+    setSaving(true);
+    try { await saveNotificationPrefs(updated); } catch { /* best-effort */ }
+    finally { setSaving(false); }
+  };
+
+  const handleEnableNotifications = async () => {
+    const token = await registerForPushNotifications();
+    if (!token) {
+      Alert.alert(
+        'Notifications Disabled',
+        'Please enable notifications for Vitalyze in your device settings.',
+        [{ text: 'OK' }]
+      );
+    } else {
+      Alert.alert('Notifications Enabled', 'You will now receive health alerts.');
+    }
+  };
+
+  const memberSince = profile?.createdAt?.seconds
+    ? new Date(profile.createdAt.seconds * 1000).toLocaleDateString('en-US', {
+        month: 'long', year: 'numeric',
+      })
+    : 'Recently';
+
+  const displayName  = user.displayName || profile?.displayName || '';
+  const avatarLetter = (displayName || user.email || 'U')[0].toUpperCase();
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
+      />
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* ── Profile card ─────────────────────────────────────── */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{avatarLetter}</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.nameRow}
+            onPress={() => setNameModalOpen(true)}
+            accessibilityLabel="Edit display name"
+            accessibilityRole="button"
+          >
+            <Text style={styles.displayName}>{displayName || 'Add your name'}</Text>
+            <Ionicons name="pencil-outline" size={15} color={colors.primary} style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+
+          <Text style={styles.email}>{user.email}</Text>
+          <Text style={styles.memberSince}>Member since {memberSince}</Text>
+        </View>
+
+        {/* ── Account ──────────────────────────────────────────── */}
+        <SectionHeader title="Account" colors={colors} />
+        <View style={styles.section}>
+          <InfoRow icon="mail-outline" label="Email" value={user.email} colors={colors} />
+
+          <TouchableOpacity
+            style={styles.tappableRow}
+            onPress={() => setPasswordModalOpen(true)}
+            accessibilityLabel="Change password"
+            accessibilityRole="button"
+          >
+            <View style={styles.rowIconWrap}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.rowLabel}>Password</Text>
+            <Text style={styles.rowValue}>Change</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tappableRow}
+            onPress={() => navigation.navigate('EditProfile')}
+            accessibilityLabel="Edit profile"
+            accessibilityRole="button"
+          >
+            <View style={styles.rowIconWrap}>
+              <Ionicons name="create-outline" size={18} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.rowLabel}>Edit Profile</Text>
+            <Text style={styles.rowValue}>Name, age, metrics</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Notifications ────────────────────────────────────── */}
+        <SectionHeader
+          title="Notifications"
+          trailing={saving ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+          colors={colors}
+        />
+        <View style={styles.section}>
+          {prefs && (
+            <>
+              <ToggleRow
+                icon="alert-circle-outline"
+                label="High-Risk Health Alerts"
+                sublabel="Get notified when critical patterns are detected"
+                value={prefs.highRiskAlerts}
+                onChange={(v) => updatePref('highRiskAlerts', v)}
+                accentColor={colors.high}
+                colors={colors}
+              />
+              <ToggleRow
+                icon="time-outline"
+                label="Daily Check-in Reminder"
+                sublabel="Reminder at 9:00 AM to complete your check-in"
+                value={prefs.dailyReminder}
+                onChange={(v) => updatePref('dailyReminder', v)}
+                accentColor={colors.primary}
+                colors={colors}
+              />
+              <ToggleRow
+                icon="bar-chart-outline"
+                label="Weekly Summary"
+                sublabel="Weekly digest of your health trends"
+                value={prefs.weeklySummary}
+                onChange={(v) => updatePref('weeklySummary', v)}
+                accentColor={colors.physical}
+                colors={colors}
+              />
+              <TouchableOpacity
+                style={styles.actionRow}
+                onPress={handleEnableNotifications}
+                accessibilityRole="button"
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.infoLight }]}>
+                  <Ionicons name="notifications-outline" size={20} color={colors.info} />
+                </View>
+                <Text style={styles.actionLabel}>Enable Push Notifications</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* ── Appearance ───────────────────────────────────────── */}
+        <SectionHeader title="Appearance" colors={colors} />
+        <View style={styles.section}>
+          <ToggleRow
+            icon="moon-outline"
+            label="Dark Mode"
+            sublabel="Deep navy background with off-white text"
+            value={isDark}
+            onChange={toggleTheme}
+            accentColor={colors.primary}
+            colors={colors}
+            isLast
+          />
+        </View>
+
+        {/* ── Privacy & Data ───────────────────────────────────── */}
+        <SectionHeader title="Privacy & Data" colors={colors} />
+        <View style={styles.section}>
+          <InfoRow icon="lock-open-outline" label="Data Encryption" value="End-to-end"        colors={colors} />
+          <InfoRow icon="eye-off-outline"   label="Data Sharing"    value="Never shared"      colors={colors} />
+          <InfoRow icon="server-outline"    label="Storage"         value="Firebase (secure)" colors={colors} />
+        </View>
+
+        {/* ── About ────────────────────────────────────────────── */}
+        <SectionHeader title="About" colors={colors} />
+        <View style={styles.section}>
+          <InfoRow icon="information-circle-outline" label="App Version"  value="1.0.0"                    colors={colors} />
+          <InfoRow icon="pulse-outline"              label="AI Engine"    value="Rule-based classifier v1" colors={colors} />
+          <InfoRow icon="git-network-outline"        label="Graph Engine" value="Weighted KG v1"           colors={colors} />
+        </View>
+
+        {/* ── Support ──────────────────────────────────────────── */}
+        <SectionHeader title="Support" colors={colors} />
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.tappableRow, { borderTopWidth: 0 }]}
+            onPress={() => navigation.navigate('FAQ')}
+            accessibilityLabel="Help and FAQ"
+            accessibilityRole="button"
+            accessibilityHint="Opens frequently asked questions"
+          >
+            <View style={styles.rowIconWrap}>
+              <Ionicons name="help-circle-outline" size={18} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.rowLabel}>Help &amp; FAQ</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Sign Out ─────────────────────────────────────────── */}
+        <TouchableOpacity
+          style={[styles.logoutBtn, signingOut && styles.btnDisabled]}
+          onPress={() => setSignOutModalOpen(true)}
+          disabled={signingOut}
+          accessibilityLabel="Sign out of Vitalyze"
+          accessibilityRole="button"
+          accessibilityHint="Opens a confirmation dialog before signing you out"
+          accessibilityState={{ disabled: signingOut, busy: signingOut }}
+        >
+          {signingOut ? (
+            <ActivityIndicator color={colors.error} />
+          ) : (
+            <>
+              <Ionicons name="log-out-outline" size={20} color={colors.error} />
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* ── Delete Account ───────────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => setDeleteModalOpen(true)}
+          accessibilityLabel="Delete account"
+          accessibilityRole="button"
+        >
+          <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
+          <Text style={styles.deleteText}>Delete Account</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.footer}>
+          Vitalyze — AI-driven health monitoring{'\n'}Your health data is private and secure.
+        </Text>
+      </ScrollView>
+
+      {/* ── Modals ───────────────────────────────────────────────── */}
+      <EditNameModal
+        visible={nameModalOpen}
+        currentName={displayName}
+        userId={user.uid}
+        onSave={(name) => {
+          setProfile((p) => ({ ...p, displayName: name }));
+          refreshUser();
+          setNameModalOpen(false);
+        }}
+        onClose={() => setNameModalOpen(false)}
+      />
+
+      <ChangePasswordModal
+        visible={passwordModalOpen}
+        onClose={() => setPasswordModalOpen(false)}
+      />
+
+      <DeleteAccountModal
+        visible={deleteModalOpen}
+        userId={user.uid}
+        onClose={() => setDeleteModalOpen(false)}
+      />
+
+      <SignOutConfirmModal
+        visible={signOutModalOpen}
+        onConfirm={doSignOut}
+        onClose={() => setSignOutModalOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// SIGN OUT CONFIRM MODAL
+// ─────────────────────────────────────────────────────────────
+function SignOutConfirmModal({ visible, onConfirm, onClose }) {
+  const { colors } = useTheme();
+  const mStyles = useMemo(() => makeModalStyles(colors), [colors]);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={mStyles.overlay} onPress={onClose}>
+        <Pressable style={mStyles.card} onPress={() => {}}>
+          <View style={[soStyles.iconWrap, { backgroundColor: colors.errorLight }]}>
+            <Ionicons name="log-out-outline" size={28} color={colors.error} />
+          </View>
+          <Text style={mStyles.title}>Sign Out</Text>
+          <Text style={[mStyles.subtitle, { marginTop: 0 }]}>
+            Are you sure you want to sign out of Vitalyze?
+          </Text>
+          <View style={mStyles.btnRow}>
+            <TouchableOpacity style={mStyles.cancelBtn} onPress={onClose}>
+              <Text style={mStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[soStyles.confirmBtn, { backgroundColor: colors.error }]}
+              onPress={onConfirm}
+            >
+              <Text style={[soStyles.confirmText, { color: colors.textInverse }]}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// EDIT NAME MODAL
+// ─────────────────────────────────────────────────────────────
+function EditNameModal({ visible, currentName, userId, onSave, onClose }) {
+  const { colors } = useTheme();
+  const mStyles = useMemo(() => makeModalStyles(colors), [colors]);
+  const [name,    setName]    = useState(currentName);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      setName(currentName);
+      setError('');
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [visible, currentName]);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError('Name cannot be empty.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await Promise.all([
+        updateDisplayName(trimmed),
+        updateUserDisplayName(userId, trimmed),
+      ]);
+      onSave(trimmed);
+    } catch (e) {
+      setError(getFriendlyAuthError(e.code) || 'Failed to update name. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={mStyles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={mStyles.card}>
+          <Text style={mStyles.title}>Edit Display Name</Text>
+          <Text style={mStyles.subtitle}>This name appears in your greeting and profile.</Text>
+
+          <TextInput
+            ref={inputRef}
+            style={[mStyles.input, error ? mStyles.inputError : null]}
+            value={name}
+            onChangeText={(t) => { setName(t); setError(''); }}
+            placeholder="Your name"
+            placeholderTextColor={colors.textTertiary}
+            returnKeyType="done"
+            onSubmitEditing={handleSave}
+            maxLength={40}
+          />
+          {error ? <Text style={mStyles.errorText}>{error}</Text> : null}
+
+          <View style={mStyles.btnRow}>
+            <TouchableOpacity style={mStyles.cancelBtn} onPress={onClose}>
+              <Text style={mStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[mStyles.saveBtn, loading && mStyles.btnDisabled]}
+              onPress={handleSave}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color={colors.textInverse} />
+                : <Text style={mStyles.saveText}>Save</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHANGE PASSWORD MODAL
+// ─────────────────────────────────────────────────────────────
+function ChangePasswordModal({ visible, onClose }) {
+  const { colors } = useTheme();
+  const mStyles = useMemo(() => makeModalStyles(colors), [colors]);
+  const [current,  setCurrent]  = useState('');
+  const [next,     setNext]     = useState('');
+  const [confirm,  setConfirm]  = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+  const nextRef    = useRef(null);
+  const confirmRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) { setCurrent(''); setNext(''); setConfirm(''); setError(''); }
+  }, [visible]);
+
+  const handleSave = async () => {
+    if (!current)         { setError('Please enter your current password.'); return; }
+    if (next.length < 6)  { setError('New password must be at least 6 characters.'); return; }
+    if (next !== confirm) { setError('New passwords do not match.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await changePassword(current, next);
+      Alert.alert('Password Updated', 'Your password has been changed successfully.');
+      onClose();
+    } catch (e) {
+      setError(getFriendlyAuthError(e.code) || 'Failed to update password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={mStyles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={mStyles.card}>
+          <Text style={mStyles.title}>Change Password</Text>
+          <Text style={mStyles.subtitle}>Enter your current password, then choose a new one.</Text>
+
+          <TextInput
+            style={[mStyles.input, error ? mStyles.inputError : null]}
+            value={current}
+            onChangeText={(t) => { setCurrent(t); setError(''); }}
+            placeholder="Current password"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            returnKeyType="next"
+            onSubmitEditing={() => nextRef.current?.focus()}
+          />
+          <TextInput
+            ref={nextRef}
+            style={[mStyles.input, error ? mStyles.inputError : null]}
+            value={next}
+            onChangeText={(t) => { setNext(t); setError(''); }}
+            placeholder="New password (min 6 characters)"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            returnKeyType="next"
+            onSubmitEditing={() => confirmRef.current?.focus()}
+          />
+          <TextInput
+            ref={confirmRef}
+            style={[mStyles.input, error ? mStyles.inputError : null]}
+            value={confirm}
+            onChangeText={(t) => { setConfirm(t); setError(''); }}
+            placeholder="Confirm new password"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            returnKeyType="done"
+            onSubmitEditing={handleSave}
+          />
+          {error ? <Text style={mStyles.errorText}>{error}</Text> : null}
+
+          <View style={mStyles.btnRow}>
+            <TouchableOpacity style={mStyles.cancelBtn} onPress={onClose}>
+              <Text style={mStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[mStyles.saveBtn, loading && mStyles.btnDisabled]}
+              onPress={handleSave}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color={colors.textInverse} />
+                : <Text style={mStyles.saveText}>Update</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DELETE ACCOUNT MODAL
+// ─────────────────────────────────────────────────────────────
+function DeleteAccountModal({ visible, userId, onClose }) {
+  const { colors } = useTheme();
+  const mStyles = useMemo(() => makeModalStyles(colors), [colors]);
+  const [password,       setPassword]       = useState('');
+  const [confirmText,    setConfirmText]    = useState('');
+  const [loading,        setLoading]        = useState(false);
+  const [error,          setError]          = useState('');
+
+  const deleteConfirmed = confirmText.trim().toLowerCase() === 'delete';
+
+  useEffect(() => {
+    if (visible) { setPassword(''); setConfirmText(''); setError(''); }
+  }, [visible]);
+
+  const handleDelete = async () => {
+    if (!deleteConfirmed) { setError('Please type DELETE in the confirmation field.'); return; }
+    if (!password) { setError('Please enter your password to confirm.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await deleteUserData(userId);
+      await deleteAccount(password);
+    } catch (e) {
+      setLoading(false);
+      setError(getFriendlyAuthError(e.code) || "Couldn't delete account. Please try again.");
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={mStyles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={mStyles.card}>
+          <View style={[delStyles.warningBadge, { backgroundColor: colors.errorLight }]}>
+            <Ionicons name="warning-outline" size={20} color={colors.error} />
+            <Text style={[delStyles.warningText, { color: colors.error }]}>Permanent Action</Text>
+          </View>
+
+          <Text style={mStyles.title}>Delete Account</Text>
+          <Text style={[delStyles.body, { color: colors.textSecondary }]}>
+            This will permanently delete your account and{' '}
+            <Text style={{ fontWeight: '700' }}>all health data</Text> — check-ins,
+            insights, and your health connection map. This cannot be undone.
+          </Text>
+
+          {/* Step 1 — type DELETE */}
+          <TextInput
+            style={[mStyles.input, { borderColor: deleteConfirmed ? colors.error : colors.error + '80' }]}
+            value={confirmText}
+            onChangeText={(t) => { setConfirmText(t); setError(''); }}
+            placeholder='Type DELETE to confirm'
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="characters"
+            returnKeyType="next"
+            accessibilityLabel="Type DELETE to confirm account deletion"
+            accessibilityHint="Type the word DELETE in capital letters to confirm"
+          />
+
+          {/* Step 2 — password */}
+          <TextInput
+            style={[mStyles.input, error ? mStyles.inputError : null]}
+            value={password}
+            onChangeText={(t) => { setPassword(t); setError(''); }}
+            placeholder="Enter your password"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            returnKeyType="done"
+            onSubmitEditing={handleDelete}
+            accessibilityLabel="Enter your password to confirm account deletion"
+          />
+          {error ? (
+            <Text
+              style={mStyles.errorText}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={error}
+            >
+              {error}
+            </Text>
+          ) : null}
+
+          <View style={mStyles.btnRow}>
+            <TouchableOpacity
+              style={mStyles.cancelBtn}
+              onPress={onClose}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel account deletion"
+            >
+              <Text style={mStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                delStyles.deleteBtn,
+                { backgroundColor: deleteConfirmed ? colors.error : colors.textTertiary },
+                loading && mStyles.btnDisabled,
+              ]}
+              onPress={handleDelete}
+              disabled={loading || !deleteConfirmed}
+              accessibilityRole="button"
+              accessibilityLabel="Delete account forever"
+              accessibilityState={{ disabled: loading || !deleteConfirmed }}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color={colors.textInverse} />
+                : <Text style={[delStyles.deleteBtnText, { color: colors.textInverse }]}>Delete Forever</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// SHARED SUB-COMPONENTS
+// ─────────────────────────────────────────────────────────────
+function SectionHeader({ title, trailing, colors }) {
+  return (
+    <View style={sectStyles.row}>
+      <Text
+        style={[sectStyles.title, { color: colors.textSecondary }]}
+        accessibilityRole="header"
+      >
+        {title}
+      </Text>
+      {trailing}
+    </View>
+  );
+}
+
+function InfoRow({ icon, label, value, colors }) {
+  return (
+    <View style={[infoStyles.row, { borderBottomColor: colors.border }]}>
+      <View style={[infoStyles.iconWrap, { backgroundColor: colors.borderLight }]}>
+        <Ionicons name={icon} size={18} color={colors.textSecondary} />
+      </View>
+      <Text style={[infoStyles.label, { color: colors.textPrimary }]}>{label}</Text>
+      <Text style={[infoStyles.value, { color: colors.textSecondary }]}>{value}</Text>
+    </View>
+  );
+}
+
+function ToggleRow({ icon, label, sublabel, value, onChange, accentColor, colors, isLast }) {
+  return (
+    <View style={[
+      toggleStyles.row,
+      { borderBottomWidth: isLast ? 0 : 1, borderBottomColor: colors.border },
+    ]}>
+      <View style={[toggleStyles.iconWrap, { backgroundColor: accentColor + '18' }]}>
+        <Ionicons name={icon} size={18} color={accentColor} importantForAccessibility="no" />
+      </View>
+      <View style={toggleStyles.text}>
+        <Text style={[toggleStyles.label, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3}>{label}</Text>
+        <Text style={[toggleStyles.sublabel, { color: colors.textSecondary }]} maxFontSizeMultiplier={1.5}>{sublabel}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: colors.border, true: colors.primary + '60' }}
+        thumbColor={value ? colors.primary : colors.textTertiary}
+        accessibilityLabel={label}
+        accessibilityHint={sublabel}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: value }}
+      />
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────
+const makeStyles = (c) => StyleSheet.create({
+  safe:    { flex: 1, backgroundColor: c.background },
+  content: { padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },
+  profileCard: {
+    alignItems: 'center',
+    backgroundColor: c.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.xl,
+    borderWidth: 1,
+    borderColor: c.border,
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  avatar:      { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarText:  { ...Typography.h1, color: c.textInverse },
+  nameRow:     { flexDirection: 'row', alignItems: 'center' },
+  displayName: { ...Typography.h4, color: c.textPrimary },
+  email:       { ...Typography.bodySmall, color: c.textSecondary },
+  memberSince: { ...Typography.caption, color: c.textTertiary },
+  section:     { backgroundColor: c.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: c.border, overflow: 'hidden' },
+  tappableRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.md, minHeight: MIN_TOUCH,
+    borderTopWidth: 1, borderColor: c.border,
+  },
+  rowIconWrap:  { width: 36, height: 36, borderRadius: Radius.sm, backgroundColor: c.borderLight, alignItems: 'center', justifyContent: 'center' },
+  rowLabel:     { ...Typography.body, color: c.textPrimary, flex: 1 },
+  rowValue:     { ...Typography.bodySmall, color: c.textSecondary },
+  actionRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.md, minHeight: MIN_TOUCH,
+    borderTopWidth: 1, borderColor: c.border,
+  },
+  actionIcon:   { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  actionLabel:  { ...Typography.body, color: c.textPrimary, flex: 1 },
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, borderRadius: Radius.full, height: 52,
+    borderWidth: 1.5, borderColor: c.error,
+    backgroundColor: c.errorLight, marginTop: Spacing.xs,
+  },
+  logoutText:  { ...Typography.button, color: c.error },
+  btnDisabled: { opacity: 0.6 },
+  deleteBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm },
+  deleteText:  { ...Typography.bodySmall, color: c.textTertiary },
+  footer:      { ...Typography.caption, color: c.textTertiary, textAlign: 'center', lineHeight: 18 },
+});
+
+const sectStyles = StyleSheet.create({
+  row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.xs },
+  title: { ...Typography.label, textTransform: 'uppercase', letterSpacing: 0.5 },
+});
+
+const infoStyles = StyleSheet.create({
+  row:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, minHeight: MIN_TOUCH, borderBottomWidth: 1 },
+  iconWrap: { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  label:    { ...Typography.body, flex: 1 },
+  value:    { ...Typography.bodySmall },
+});
+
+const toggleStyles = StyleSheet.create({
+  row:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, minHeight: MIN_TOUCH + 8 },
+  iconWrap: { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  text:     { flex: 1, gap: 2 },
+  label:    { ...Typography.body },
+  sublabel: { ...Typography.caption },
+});
+
+const makeModalStyles = (c) => StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.lg,
+  },
+  card: {
+    width: '100%', backgroundColor: c.surface,
+    borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.md, zIndex: 1,
+  },
+  title:      { ...Typography.h3, color: c.textPrimary },
+  subtitle:   { ...Typography.bodySmall, color: c.textSecondary, marginTop: -Spacing.xs },
+  input: {
+    height: 48, borderWidth: 1.5, borderColor: c.border,
+    borderRadius: Radius.md, paddingHorizontal: Spacing.md,
+    ...Typography.body, color: c.textPrimary, backgroundColor: c.background,
+  },
+  inputError:  { borderColor: c.error },
+  errorText:   { ...Typography.bodySmall, color: c.error },
+  btnRow:      { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  cancelBtn:   { flex: 1, height: 46, borderRadius: Radius.md, borderWidth: 1.5, borderColor: c.border, alignItems: 'center', justifyContent: 'center' },
+  cancelText:  { ...Typography.button, color: c.textSecondary },
+  saveBtn:     { flex: 1, height: 46, borderRadius: Radius.md, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
+  saveText:    { ...Typography.button, color: c.textInverse },
+  btnDisabled: { opacity: 0.6 },
+});
+
+const delStyles = StyleSheet.create({
+  warningBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: 6, alignSelf: 'flex-start' },
+  warningText:  { ...Typography.label },
+  body:         { ...Typography.bodySmall, lineHeight: 20 },
+  deleteBtn:    { flex: 1, height: 46, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  deleteBtnText:{ ...Typography.button },
+});
+
+const soStyles = StyleSheet.create({
+  iconWrap:    { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: Spacing.xs },
+  confirmBtn:  { flex: 1, height: 46, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  confirmText: { ...Typography.button },
+});
