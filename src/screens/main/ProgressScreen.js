@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal, Pressable,
-  RefreshControl, StatusBar, SafeAreaView, Dimensions, ActivityIndicator,
+  RefreshControl, StatusBar, SafeAreaView, Dimensions, ActivityIndicator, Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { BarChart } from 'react-native-chart-kit';
+import { generateWeeklyReport, generateMonthlyReport } from '../../utils/generateHealthReport';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -60,13 +61,14 @@ export default function ProgressScreen({ navigation }) {
   const { user }              = useAuth();
   const { colors, isDark }    = useTheme();
   const styles                = useMemo(() => makeStyles(colors), [colors]);
-  const [insights,   setInsights]   = useState([]);
-  const [logs,       setLogs]       = useState([]);
-  const [graph,      setGraph]      = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeTab,  setActiveTab]  = useState(0);
-  const [tooltip,    setTooltip]    = useState(null);
+  const [insights,      setInsights]      = useState([]);
+  const [logs,          setLogs]          = useState([]);
+  const [graph,         setGraph]         = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [activeTab,     setActiveTab]     = useState(0);
+  const [tooltip,       setTooltip]       = useState(null);
+  const [reportLoading, setReportLoading] = useState(null); // 'weekly' | 'monthly' | null
 
   const load = useCallback(async () => {
     const [ins, lg, gr] = await Promise.allSettled([
@@ -84,6 +86,21 @@ export default function ProgressScreen({ navigation }) {
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  const handleReport = async (type) => {
+    setReportLoading(type);
+    try {
+      if (type === 'weekly') {
+        await generateWeeklyReport(user.uid);
+      } else {
+        await generateMonthlyReport(user.uid);
+      }
+    } catch (err) {
+      Alert.alert('Report Failed', 'Could not generate the report. Please try again.');
+    } finally {
+      setReportLoading(null);
+    }
+  };
 
   if (loading) return <LoadingSpinner fullScreen message="Loading progress data…" />;
 
@@ -112,6 +129,37 @@ export default function ProgressScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.title} accessibilityRole="header">Progress</Text>
         <Text style={styles.subtitle}>Track your health trends over time</Text>
+      </View>
+
+      <View style={styles.reportBar}>
+        <Ionicons name="document-text-outline" size={15} color={colors.textSecondary} />
+        <Text style={styles.reportBarLabel}>Download Report</Text>
+        <View style={styles.reportBtns}>
+          <TouchableOpacity
+            style={[styles.reportBtn, { backgroundColor: colors.primary, opacity: reportLoading ? 0.6 : 1 }]}
+            onPress={() => handleReport('weekly')}
+            disabled={!!reportLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Download weekly health report"
+          >
+            {reportLoading === 'weekly'
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.reportBtnText}>Weekly</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.reportBtn, { backgroundColor: colors.primary, opacity: reportLoading ? 0.6 : 1 }]}
+            onPress={() => handleReport('monthly')}
+            disabled={!!reportLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Download monthly health report"
+          >
+            {reportLoading === 'monthly'
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.reportBtnText}>Monthly</Text>
+            }
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -596,6 +644,30 @@ const makeStyles = (c) => StyleSheet.create({
   header: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.sm, gap: 2 },
   title:    { ...Typography.h2, color: c.textPrimary },
   subtitle: { ...Typography.bodySmall, color: c.textSecondary },
+  reportBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: c.border,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    backgroundColor: c.surface,
+  },
+  reportBarLabel: { ...Typography.label, color: c.textSecondary, flex: 1 },
+  reportBtns:    { flexDirection: 'row', gap: Spacing.sm },
+  reportBtn: {
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 7,
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 34,
+  },
+  reportBtnText: { ...Typography.label, color: '#fff', fontWeight: '700' },
   // Average Score card
   avgCard: {
     backgroundColor: c.surface, borderRadius: Radius.lg, padding: Spacing.md,

@@ -15,11 +15,13 @@ import { getUserProfile } from '../services/firestoreService';
 import LoginScreen               from '../screens/auth/LoginScreen';
 import RegisterScreen            from '../screens/auth/RegisterScreen';
 import TermsAndConditionsScreen  from '../screens/legal/TermsAndConditionsScreen';
+import QRLoginScreen             from '../screens/auth/QRLoginScreen';
 
 // Onboarding
-import OnboardingScreen    from '../screens/onboarding/OnboardingScreen';
-import TutorialScreen      from '../screens/onboarding/TutorialScreen';
-import ProfileSetupScreen  from '../screens/onboarding/ProfileSetupScreen';
+import OnboardingScreen       from '../screens/onboarding/OnboardingScreen';
+import TutorialScreen         from '../screens/onboarding/TutorialScreen';
+import ProfileSetupScreen     from '../screens/onboarding/ProfileSetupScreen';
+import WellnessIntentScreen   from '../screens/onboarding/WellnessIntentScreen';
 
 // Main screens
 import HomeScreen     from '../screens/main/HomeScreen';
@@ -149,11 +151,9 @@ export default function AppNavigator() {
 
   // Check per-user tutorial and profile-setup flags whenever the logged-in user changes
   useEffect(() => {
-    if (!user) {
-      setTutorialSeen(null);
-      setProfileSetupComplete(null);
-      return;
-    }
+    setTutorialSeen(null);
+    setProfileSetupComplete(null);
+    if (!user) return;
     Promise.all([
       AsyncStorage.getItem(`tutorial_seen_${user.uid}`),
       getUserProfile(user.uid),
@@ -169,7 +169,7 @@ export default function AppNavigator() {
   }, [user]);
 
   // Wait for onboarding check; also wait for per-user flags when user is logged in
-  if (loading || onboardingDone === null || (user && (tutorialSeen === null || profileSetupComplete === null))) {
+  if (loading || onboardingDone === null || (user && user.emailVerified && (tutorialSeen === null || profileSetupComplete === null))) {
     return <LoadingSpinner fullScreen />;
   }
 
@@ -189,7 +189,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer theme={navTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!user ? (
+        {(!user || !user.emailVerified) ? (
           <>
             {!onboardingDone && (
               <Stack.Screen name="Onboarding" component={OnboardingScreen} />
@@ -202,14 +202,16 @@ export default function AppNavigator() {
               <Stack.Screen name="Tutorial"     component={TutorialScreen} />
             )}
             {!profileSetupComplete && (
-              <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+              <Stack.Screen name="ProfileSetup"   component={ProfileSetupScreen} />
             )}
-            <Stack.Screen name="Main"         component={MainTabs} />
+            <Stack.Screen name="WellnessIntent" component={WellnessIntentScreen} />
+            <Stack.Screen name="Main"           component={MainTabs} />
             <Stack.Screen name="FAQ"         component={FAQScreen} />
             <Stack.Screen name="Circle"      component={CircleScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
           </>
         )}
+        <Stack.Screen name="QRLogin" component={QRLoginScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

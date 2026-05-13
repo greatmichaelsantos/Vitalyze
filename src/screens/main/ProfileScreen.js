@@ -2,11 +2,15 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Switch, Alert, StatusBar, SafeAreaView, ActivityIndicator,
-  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable, Image, Linking,
+  Animated, Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
-import { auth } from '../../../firebase';
+import { signOut, updateProfile } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../../firebase';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -14,38 +18,55 @@ import {
 } from '../../services/authService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserProfile, updateUserDisplayName, deleteUserData } from '../../services/firestoreService';
-import { STORAGE_KEYS } from '../../utils/constants';
+import { STORAGE_KEYS, COLLECTIONS } from '../../utils/constants';
 import {
   getNotificationPrefs,
   saveNotificationPrefs,
   registerForPushNotifications,
 } from '../../services/notificationService';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
+import { PRESENCE_COLORS, PRESENCE_PRESETS } from '../../utils/presenceColors';
 
 export default function ProfileScreen({ navigation }) {
   const { user, refreshUser }           = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [profile,    setProfile]    = useState(null);
-  const [prefs,      setPrefs]      = useState(null);
-  const [saving,     setSaving]     = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
+  const [profile,         setProfile]         = useState(null);
+  const [prefs,           setPrefs]           = useState(null);
+  const [saving,          setSaving]          = useState(false);
+  const [signingOut,      setSigningOut]       = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [localPhotoUri,   setLocalPhotoUri]   = useState(null);
+  const [avatarImageLoading, setAvatarImageLoading] = useState(false);
+
+  const [circleId,       setCircleId]       = useState(null);
+  const [presenceStatus, setPresenceStatus] = useState('Online');
 
   const [nameModalOpen,     setNameModalOpen]     = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [deleteModalOpen,   setDeleteModalOpen]   = useState(false);
   const [signOutModalOpen,  setSignOutModalOpen]  = useState(false);
+  const [ecModalOpen,       setEcModalOpen]       = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const [p, notifPrefs] = await Promise.all([
+        const [p, notifPrefs, cid] = await Promise.all([
           getUserProfile(user.uid),
           getNotificationPrefs(),
+          AsyncStorage.getItem(`circle_id_${user.uid}`),
         ]);
         setProfile(p);
+        console.log('[ProfileScreen] healthInfo:', p?.allergies, p?.medicalConditions, p?.currentMedications);
         setPrefs(notifPrefs);
+        if (cid) {
+          setCircleId(cid);
+          const memberSnap = await getDoc(doc(db, 'circleMembers', cid, 'members', user.uid));
+          if (memberSnap.exists()) {
+            setPresenceStatus(memberSnap.data().presenceStatus || 'Online');
+          }
+        }
       } catch {
         setPrefs({ highRiskAlerts: true, dailyReminder: true, weeklySummary: true });
       }
@@ -83,13 +104,87 @@ export default function ProfileScreen({ navigation }) {
     if (!token) {
       Alert.alert(
         'Notifications Disabled',
-        'Please enable notifications for Vitalyze in your device settings.',
+        'Please enable notifications for Mend in your device settings.',
         [{ text: 'OK' }]
       );
     } else {
       Alert.alert('Notifications Enabled', 'You will now receive health alerts.');
     }
   };
+
+  const handleSelectPresence = async (status) => {
+    setPresenceStatus(status);
+    try {
+      if (circleId) {
+        await setDoc(
+          doc(db, 'circleMembers', circleId, 'members', user.uid),
+          { presenceStatus: status },
+          { merge: true }
+        );
+      }
+    } catch (err) {
+      console.warn('ProfileScreen savePresence:', err);
+    }
+  };
+
+  const pickAndUploadAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please allow access to your photo library in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'Images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const uri = result.assets[0].uri;
+    setLocalPhotoUri(uri);
+    setAvatarUploading(true);
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 300, height: 300 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      const compressedUri = manipulated.uri;
+      const response = await fetch(compressedUri);
+      const blob = await response.blob();
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const photoURL = base64;
+      await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { photoURL }, { merge: true });
+      setProfile((prev) => ({ ...prev, photoURL }));
+      await refreshUser();
+      const circleId = await AsyncStorage.getItem(`circle_id_${user.uid}`);
+      if (circleId) {
+        await setDoc(
+          doc(db, 'circleMembers', circleId, 'members', user.uid),
+          { photoURL },
+          { merge: true }
+        );
+      }
+    } catch (err) {
+      setLocalPhotoUri(null);
+      const msg = err?.message || err?.code || String(err) || 'Unknown error';
+      Alert.alert('Upload Failed', `Could not update your profile photo.\n\n${msg}`);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const photoURL = localPhotoUri || profile?.photoURL || null;
+
+  useEffect(() => {
+    if (photoURL) setAvatarImageLoading(true);
+  }, [photoURL]);
 
   const memberSince = profile?.createdAt?.seconds
     ? new Date(profile.createdAt.seconds * 1000).toLocaleDateString('en-US', {
@@ -111,9 +206,44 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── Profile card ─────────────────────────────────────── */}
         <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{avatarLetter}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.avatarWrap}
+            onPress={pickAndUploadAvatar}
+            disabled={avatarUploading}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile photo"
+          >
+            {avatarUploading ? (
+              <View style={[styles.avatar, styles.avatarLoading]}>
+                <ActivityIndicator color={colors.textInverse} />
+              </View>
+            ) : (
+              <>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{avatarLetter}</Text>
+                </View>
+                {!!photoURL && (
+                  <Image
+                    source={{ uri: photoURL }}
+                    style={[
+                      styles.avatarImage,
+                      styles.avatarImageAbsolute,
+                      avatarImageLoading && styles.avatarImageHidden,
+                    ]}
+                    onLoad={() => setAvatarImageLoading(false)}
+                    onError={() => {
+                      setAvatarImageLoading(false);
+                      setLocalPhotoUri(null);
+                      setProfile((prev) => prev ? { ...prev, photoURL: null } : prev);
+                    }}
+                  />
+                )}
+              </>
+            )}
+            <View style={[styles.avatarBadge, { backgroundColor: colors.primary }]}>
+              <Ionicons name="camera" size={11} color="#fff" />
+            </View>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.nameRow}
@@ -129,10 +259,175 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.memberSince}>Member since {memberSince}</Text>
         </View>
 
+        {/* ── Presence Status ──────────────────────────────────── */}
+        {!!circleId && (
+          <View style={styles.presenceCard}>
+            <Text style={styles.presenceLabel}>My Presence Status</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.presencePillRow}
+              keyboardShouldPersistTaps="handled"
+            >
+              {PRESENCE_PRESETS.map((p) => {
+                const selected = presenceStatus === p.key;
+                return (
+                  <TouchableOpacity
+                    key={p.key}
+                    style={[
+                      styles.presencePill,
+                      selected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    onPress={() => handleSelectPresence(p.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={p.label}
+                    accessibilityState={{ selected }}
+                  >
+                    <View style={styles.presencePillInner}>
+                      <View style={[styles.presenceDot, { backgroundColor: PRESENCE_COLORS[p.key] }]} />
+                      <Text
+                        style={[styles.presencePillText, selected && { color: '#fff' }]}
+                        maxFontSizeMultiplier={1.2}
+                      >
+                        {p.label}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── Emergency Contact ────────────────────────────────── */}
+        <SectionHeader title="Emergency Contact" colors={colors} />
+        {(profile?.emergencyContactName || profile?.emergencyContactNumber) ? (
+          <View style={[styles.section, { padding: Spacing.md, gap: Spacing.md }]}>
+            <View style={[ecStyles.infoRow, { justifyContent: 'space-between' }]}>
+              <View style={[ecStyles.infoRow, { flex: 1 }]}>
+                <View style={[styles.rowIconWrap, { backgroundColor: colors.errorLight }]}>
+                  <Ionicons name="medkit-outline" size={18} color={colors.error} />
+                </View>
+                <View style={ecStyles.infoText}>
+                  <Text style={[ecStyles.contactName, { color: colors.textPrimary }]} numberOfLines={1}>
+                    {profile.emergencyContactName || '—'}
+                  </Text>
+                  <Text style={[ecStyles.contactNumber, { color: colors.textSecondary }]}>
+                    {profile.emergencyContactNumber
+                      ? profile.emergencyContactNumber.replace(/(\d{4})(\d{3})(\d{4})/, '$1 $2 $3')
+                      : '—'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setEcModalOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Edit emergency contact"
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="pencil-outline" size={18} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            {!!profile?.emergencyContactNumber && (
+              <View style={ecStyles.btnRow}>
+                <TouchableOpacity
+                  style={[ecStyles.actionBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => Linking.openURL(`tel:${profile.emergencyContactNumber}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Call ${profile.emergencyContactName || 'emergency contact'}`}
+                >
+                  <Ionicons name="call" size={16} color="#fff" />
+                  <Text style={ecStyles.actionBtnText}>Call</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[ecStyles.actionBtn, { borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  onPress={() => Linking.openURL(`sms:${profile.emergencyContactNumber}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Message ${profile.emergencyContactName || 'emergency contact'}`}
+                >
+                  <Ionicons name="chatbubble-outline" size={16} color={colors.textPrimary} />
+                  <Text style={[ecStyles.actionBtnText, { color: colors.textPrimary }]}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={[styles.tappableRow, { borderTopWidth: 0 }]}
+              onPress={() => setEcModalOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Add emergency contact"
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: colors.errorLight }]}>
+                <Ionicons name="person-add-outline" size={18} color={colors.error} />
+              </View>
+              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>Add Emergency Contact</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Health Info ──────────────────────────────────────── */}
+        {(profile?.allergies || profile?.medicalConditions || profile?.currentMedications) && (
+          <>
+            <SectionHeader title="Health Info" colors={colors} />
+            <View style={[styles.section, { padding: Spacing.md, gap: Spacing.md }]}>
+              {!!profile.allergies && (
+                <View style={hiStyles.row}>
+                  <View style={[styles.rowIconWrap, { backgroundColor: colors.errorLight }]}>
+                    <Ionicons name="warning-outline" size={18} color={colors.error} />
+                  </View>
+                  <View style={hiStyles.textBlock}>
+                    <Text style={[hiStyles.fieldLabel, { color: colors.textTertiary }]}>Allergies</Text>
+                    <Text style={[hiStyles.fieldValue, { color: colors.textPrimary }]}>{profile.allergies}</Text>
+                  </View>
+                </View>
+              )}
+              {!!profile.medicalConditions && (
+                <View style={hiStyles.row}>
+                  <View style={[styles.rowIconWrap, { backgroundColor: colors.infoLight }]}>
+                    <Ionicons name="fitness-outline" size={18} color={colors.info} />
+                  </View>
+                  <View style={hiStyles.textBlock}>
+                    <Text style={[hiStyles.fieldLabel, { color: colors.textTertiary }]}>Medical Conditions</Text>
+                    <Text style={[hiStyles.fieldValue, { color: colors.textPrimary }]}>{profile.medicalConditions}</Text>
+                  </View>
+                </View>
+              )}
+              {!!profile.currentMedications && (
+                <View style={hiStyles.row}>
+                  <View style={[styles.rowIconWrap, { backgroundColor: colors.primaryLight }]}>
+                    <Ionicons name="medkit-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View style={hiStyles.textBlock}>
+                    <Text style={[hiStyles.fieldLabel, { color: colors.textTertiary }]}>Current Medications</Text>
+                    <Text style={[hiStyles.fieldValue, { color: colors.textPrimary }]}>{profile.currentMedications}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          </>
+        )}
+
         {/* ── Account ──────────────────────────────────────────── */}
         <SectionHeader title="Account" colors={colors} />
         <View style={styles.section}>
           <InfoRow icon="mail-outline" label="Email" value={user.email} colors={colors} />
+
+          <TouchableOpacity
+            style={styles.tappableRow}
+            onPress={() => navigation.navigate('QRLogin')}
+            accessibilityLabel="QR Login — log in on another device"
+            accessibilityRole="button"
+          >
+            <View style={styles.rowIconWrap}>
+              <Ionicons name="qr-code-outline" size={18} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.rowLabel}>QR Login</Text>
+            <Text style={styles.rowValue}>Log in on another device</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.tappableRow}
@@ -268,7 +563,7 @@ export default function ProfileScreen({ navigation }) {
           style={[styles.logoutBtn, signingOut && styles.btnDisabled]}
           onPress={() => setSignOutModalOpen(true)}
           disabled={signingOut}
-          accessibilityLabel="Sign out of Vitalyze"
+          accessibilityLabel="Sign out of Mend"
           accessibilityRole="button"
           accessibilityHint="Opens a confirmation dialog before signing you out"
           accessibilityState={{ disabled: signingOut, busy: signingOut }}
@@ -295,7 +590,7 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
 
         <Text style={styles.footer}>
-          Vitalyze — AI-driven health monitoring{'\n'}Your health data is private and secure.
+          Mend — Heal from within{'\n'}Your health data is private and secure.
         </Text>
       </ScrollView>
 
@@ -328,6 +623,19 @@ export default function ProfileScreen({ navigation }) {
         onConfirm={doSignOut}
         onClose={() => setSignOutModalOpen(false)}
       />
+
+      <EmergencyContactModal
+        visible={ecModalOpen}
+        currentName={profile?.emergencyContactName || ''}
+        currentNumber={profile?.emergencyContactNumber || ''}
+        currentEmail={profile?.emergencyContactEmail || ''}
+        userId={user.uid}
+        onSave={(updated) => {
+          setProfile((p) => ({ ...p, ...updated }));
+          setEcModalOpen(false);
+        }}
+        onClose={() => setEcModalOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -347,7 +655,7 @@ function SignOutConfirmModal({ visible, onConfirm, onClose }) {
           </View>
           <Text style={mStyles.title}>Sign Out</Text>
           <Text style={[mStyles.subtitle, { marginTop: 0 }]}>
-            Are you sure you want to sign out of Vitalyze?
+            Are you sure you want to sign out of Mend?
           </Text>
           <View style={mStyles.btnRow}>
             <TouchableOpacity style={mStyles.cancelBtn} onPress={onClose}>
@@ -670,6 +978,198 @@ function DeleteAccountModal({ visible, userId, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// EMERGENCY CONTACT BOTTOM SHEET MODAL
+// ─────────────────────────────────────────────────────────────
+function EmergencyContactModal({ visible, currentName, currentNumber, currentEmail, userId, onSave, onClose }) {
+  const { colors } = useTheme();
+  const translateY = useRef(new Animated.Value(500)).current;
+  const [ecName,        setEcName]        = useState('');
+  const [ecNumber,      setEcNumber]      = useState('');
+  const [ecEmail,       setEcEmail]       = useState('');
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (visible) {
+      setEcName(currentName || '');
+      const raw = (currentNumber || '').replace(/\s/g, '').slice(0, 11);
+      let fmtNum = raw;
+      if (raw.length > 4) fmtNum = raw.slice(0, 4) + ' ' + raw.slice(4);
+      if (raw.length > 7) fmtNum = fmtNum.slice(0, 8) + ' ' + raw.slice(7);
+      setEcNumber(fmtNum);
+      setEcEmail(currentEmail || '');
+      setError('');
+      translateY.setValue(500);
+      Animated.timing(translateY, { toValue: 0, duration: 300, useNativeDriver: true }).start();
+    }
+  }, [visible]);
+
+  const close = () => {
+    Animated.timing(translateY, { toValue: 500, duration: 250, useNativeDriver: true }).start(() => onClose());
+  };
+
+  const handleEcNumberFocus = () => { if (!ecNumber) setEcNumber('09'); };
+  const handleEcNumberBlur  = () => {
+    const raw = ecNumber.replace(/\s/g, '');
+    if (raw === '09' || raw.length < 3) setEcNumber('');
+  };
+  const handleEcNumberChange = (t) => {
+    let digits = t.replace(/[^0-9]/g, '');
+    if (digits.length < 2) { setEcNumber('09'); return; }
+    if (!digits.startsWith('09')) digits = '09' + digits.slice(2);
+    digits = digits.slice(0, 11);
+    let formatted = digits;
+    if (digits.length > 4) formatted = digits.slice(0, 4) + ' ' + digits.slice(4);
+    if (digits.length > 7) formatted = formatted.slice(0, 8) + ' ' + digits.slice(7);
+    setEcNumber(formatted);
+    setError('');
+  };
+
+  const handleSave = async () => {
+    const nameTrimmed = ecName.trim();
+    const rawNumber   = ecNumber.replace(/\s/g, '');
+    if (!nameTrimmed) { setError('Please enter a name.'); return; }
+    if (rawNumber && (rawNumber.length !== 11 || !rawNumber.startsWith('09'))) {
+      setError('Phone number must be 11 digits starting with 09.');
+      return;
+    }
+    const emailTrimmed = ecEmail.trim().toLowerCase();
+    setLoading(true);
+    setError('');
+    try {
+      await setDoc(
+        doc(db, COLLECTIONS.USERS, userId),
+        { emergencyContactName: nameTrimmed, emergencyContactNumber: rawNumber, emergencyContactEmail: emailTrimmed },
+        { merge: true }
+      );
+      onSave({ emergencyContactName: nameTrimmed, emergencyContactNumber: rawNumber, emergencyContactEmail: emailTrimmed });
+    } catch {
+      setError('Something went wrong. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={close}>
+      <View style={StyleSheet.absoluteFill}>
+        <Pressable style={ecModalStyles.backdrop} onPress={close} />
+        <Animated.View
+          style={[ecModalStyles.sheet, { backgroundColor: colors.surface, transform: [{ translateY }], marginBottom: keyboardHeight }]}
+        >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ gap: Spacing.md }}
+          >
+            <View style={ecModalStyles.handle} />
+            <Text style={[ecModalStyles.title, { color: colors.textPrimary }]}>Emergency Contact</Text>
+
+            {!!currentNumber && (
+              <View style={ecStyles.btnRow}>
+                <TouchableOpacity
+                  style={[ecStyles.actionBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => Linking.openURL(`tel:${currentNumber}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Call emergency contact"
+                >
+                  <Ionicons name="call" size={16} color="#fff" />
+                  <Text style={ecStyles.actionBtnText}>Call</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[ecStyles.actionBtn, { borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  onPress={() => Linking.openURL(`sms:${currentNumber}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Message emergency contact"
+                >
+                  <Ionicons name="chatbubble-outline" size={16} color={colors.textPrimary} />
+                  <Text style={[ecStyles.actionBtnText, { color: colors.textPrimary }]}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={ecModalStyles.fieldGroup}>
+              <Text style={[ecModalStyles.label, { color: colors.textSecondary }]}>Name</Text>
+              <TextInput
+                style={[ecModalStyles.input, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
+                placeholder="Full name"
+                placeholderTextColor={colors.textTertiary}
+                value={ecName}
+                onChangeText={(t) => { setEcName(t); setError(''); }}
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="next"
+              />
+            </View>
+
+            <View style={ecModalStyles.fieldGroup}>
+              <Text style={[ecModalStyles.label, { color: colors.textSecondary }]}>Phone Number</Text>
+              <TextInput
+                style={[ecModalStyles.input, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
+                placeholder="09XX XXX XXXX"
+                placeholderTextColor={colors.textTertiary}
+                value={ecNumber}
+                onFocus={handleEcNumberFocus}
+                onBlur={handleEcNumberBlur}
+                onChangeText={handleEcNumberChange}
+                keyboardType="number-pad"
+                returnKeyType="next"
+                maxLength={13}
+              />
+            </View>
+
+            <View style={ecModalStyles.fieldGroup}>
+              <Text style={[ecModalStyles.label, { color: colors.textSecondary }]}>Emergency Contact Email</Text>
+              <TextInput
+                style={[ecModalStyles.input, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
+                placeholder="email@example.com"
+                placeholderTextColor={colors.textTertiary}
+                value={ecEmail}
+                onChangeText={(t) => { setEcEmail(t); setError(''); }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="done"
+              />
+            </View>
+
+            {!!error && (
+              <Text style={[ecModalStyles.errorText, { color: colors.error }]}>{error}</Text>
+            )}
+
+            <TouchableOpacity
+              style={[ecModalStyles.saveBtn, { backgroundColor: colors.primary }, loading && { opacity: 0.6 }]}
+              onPress={handleSave}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Save emergency contact"
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={[ecModalStyles.saveBtnText, { color: colors.textInverse }]}>Save</Text>
+              }
+            </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // SHARED SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
 function SectionHeader({ title, trailing, colors }) {
@@ -741,7 +1241,18 @@ const makeStyles = (c) => StyleSheet.create({
     gap: Spacing.sm,
     marginTop: Spacing.md,
   },
-  avatar:      { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarWrap:    { width: 72, height: 72 },
+  avatar:        { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarLoading: { backgroundColor: c.primary + 'aa' },
+  avatarImage:        { width: 72, height: 72, borderRadius: 36 },
+  avatarImageAbsolute:{ position: 'absolute', top: 0, left: 0 },
+  avatarImageHidden:  { opacity: 0 },
+  avatarBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: c.surface,
+  },
   avatarText:  { ...Typography.h1, color: c.textInverse },
   nameRow:     { flexDirection: 'row', alignItems: 'center' },
   displayName: { ...Typography.h4, color: c.textPrimary },
@@ -774,6 +1285,28 @@ const makeStyles = (c) => StyleSheet.create({
   deleteBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm },
   deleteText:  { ...Typography.bodySmall, color: c.textTertiary },
   footer:      { ...Typography.caption, color: c.textTertiary, textAlign: 'center', lineHeight: 18 },
+
+  // Presence status card
+  presenceCard: {
+    backgroundColor: c.surface,
+    borderRadius:    Radius.lg,
+    padding:         Spacing.md,
+    borderWidth:     1,
+    borderColor:     c.border,
+    gap:             Spacing.sm,
+  },
+  presenceLabel:   { ...Typography.label, color: c.textSecondary },
+  presencePillRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+  presencePill: {
+    borderWidth:       1,
+    borderColor:       c.border,
+    borderRadius:      Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical:   6,
+  },
+  presencePillInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  presenceDot: { width: 8, height: 8, borderRadius: 4 },
+  presencePillText: { ...Typography.caption, color: c.textSecondary, fontWeight: '600' },
 });
 
 const sectStyles = StyleSheet.create({
@@ -834,4 +1367,48 @@ const soStyles = StyleSheet.create({
   iconWrap:    { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: Spacing.xs },
   confirmBtn:  { flex: 1, height: 46, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
   confirmText: { ...Typography.button },
+});
+
+const hiStyles = StyleSheet.create({
+  row:        { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  textBlock:  { flex: 1, gap: 2 },
+  fieldLabel: { ...Typography.caption, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
+  fieldValue: { ...Typography.bodySmall, lineHeight: 20 },
+});
+
+const ecStyles = StyleSheet.create({
+  infoRow:       { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  infoText:      { flex: 1, gap: 2 },
+  contactName:   { ...Typography.body, fontWeight: '600' },
+  contactNumber: { ...Typography.bodySmall },
+  btnRow:        { flexDirection: 'row', gap: Spacing.sm },
+  actionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 6,
+    height: 40, borderRadius: Radius.md,
+  },
+  actionBtnText: { ...Typography.button, fontSize: 14, color: '#fff' },
+});
+
+const ecModalStyles = StyleSheet.create({
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl,
+    padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md,
+  },
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(0,0,0,0.18)', alignSelf: 'center', marginBottom: Spacing.xs,
+  },
+  title:       { ...Typography.h3 },
+  fieldGroup:  { gap: Spacing.xs },
+  label:       { ...Typography.label },
+  input: {
+    height: 48, borderWidth: 1.5, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, ...Typography.body,
+  },
+  errorText:   { ...Typography.bodySmall },
+  saveBtn:     { height: 52, borderRadius: Radius.full, alignItems: 'center', justifyContent: 'center' },
+  saveBtnText: { ...Typography.button },
 });

@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
   RefreshControl, StatusBar, SafeAreaView,
+  TouchableOpacity, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useState } from 'react';
@@ -54,7 +55,10 @@ export default function InsightsScreen({ navigation }) {
     try {
       setError('');
       const data = await getLatestInsight(user.uid);
+      console.log('[InsightsScreen] selfHarmRisk received:', data?.selfHarmRisk ?? '(not present)');
+      console.log('[InsightsScreen] full insight object:', JSON.stringify(data, null, 2));
       setInsight(data);
+      console.log('[InsightsScreen] insight set to:', JSON.stringify(data));
     } catch {
       setError("Couldn't load insights. Check your connection and pull down to retry.");
     } finally {
@@ -64,6 +68,7 @@ export default function InsightsScreen({ navigation }) {
   }, [user.uid]);
 
   useFocusEffect(useCallback(() => {
+    console.log('[InsightsScreen] useFocusEffect triggered');
     scrollViewRef.current?.scrollTo({ y: 0, animated: false });
     setLoading(true);
     load();
@@ -144,6 +149,11 @@ export default function InsightsScreen({ navigation }) {
               {overallAlerts.map((a) => <AlertCard key={a.id} alert={a} />)}
             </View>
 
+            {console.log('[InsightsScreen] checking selfHarmRisk:', insight?.selfHarmRisk) || null}
+            {(insight.selfHarmRisk === 'medium' || insight.selfHarmRisk === 'high') && (
+              <CrisisSupport selfHarmRisk={insight.selfHarmRisk} colors={colors} />
+            )}
+
             <DomainSection
               domain="physical"
               title="Physical Health"
@@ -175,6 +185,41 @@ export default function InsightsScreen({ navigation }) {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+const CRISIS_HOTLINES = [
+  { label: 'Hopeline PH',         number: '8804-4673' },
+  { label: 'NCMH Crisis Hotline', number: '1553' },
+  { label: 'In Touch Crisis Line', number: '0917-800-8654' },
+  { label: 'Text HELLO to',       number: '4673' },
+];
+
+function CrisisSupport({ selfHarmRisk, colors }) {
+  console.log('[InsightsScreen] rendering crisis card for selfHarmRisk:', selfHarmRisk);
+  return (
+    <View style={[crisisStyles.card, { backgroundColor: colors.mentalAccent }]}>
+      <Text style={crisisStyles.emoji}>💙</Text>
+      <Text style={crisisStyles.title}>You Are Not Alone</Text>
+      <Text style={crisisStyles.body}>
+        We noticed you may be carrying something heavy right now. These free and confidential hotlines are here for you anytime:
+      </Text>
+      {CRISIS_HOTLINES.map((h, i) => (
+        <React.Fragment key={h.label}>
+          {i > 0 && <View style={crisisStyles.divider} />}
+          <TouchableOpacity
+            style={crisisStyles.hotlineRow}
+            onPress={() => Linking.openURL(`tel:${h.number}`)}
+            accessibilityRole="link"
+            accessibilityLabel={`${h.label} ${h.number}`}
+          >
+            <Ionicons name="call-outline" size={15} color="rgba(255,255,255,0.8)" />
+            <Text style={crisisStyles.hotlineLabel}>{h.label}</Text>
+            <Text style={crisisStyles.hotlineNumber}>{h.number}</Text>
+          </TouchableOpacity>
+        </React.Fragment>
+      ))}
+    </View>
   );
 }
 
@@ -381,4 +426,24 @@ const factorStyles = StyleSheet.create({
   barTrack:    { height: 5, borderRadius: Radius.full, overflow: 'hidden' },
   barFill:     { height: '100%', borderRadius: Radius.full },
   description: { ...Typography.caption, lineHeight: 17 },
+});
+
+const crisisStyles = StyleSheet.create({
+  card: {
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  emoji:         { fontSize: 40, textAlign: 'center' },
+  title:         { fontSize: 20, fontWeight: '700', letterSpacing: -0.2, color: '#fff', textAlign: 'center' },
+  body:          { ...Typography.bodySmall, color: 'rgba(255,255,255,0.75)', textAlign: 'center', marginBottom: Spacing.xs },
+  divider:       { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.2)' },
+  hotlineRow:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xs + 2 },
+  hotlineLabel:  { ...Typography.label, color: 'rgba(255,255,255,0.9)', flex: 1 },
+  hotlineNumber: { ...Typography.label, fontWeight: '700', color: '#fff' },
 });

@@ -5,9 +5,13 @@ import {
   ActivityIndicator, SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { sendEmailVerification, signOut } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../../../firebase';
 import { register, getFriendlyAuthError } from '../../services/authService';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
+import { Typography, Spacing, Radius, MIN_TOUCH, COLLECTIONS } from '../../utils/constants';
 
 // ── Password requirement checks ──────────────────────────────────────────────
 function getChecks(pw) {
@@ -41,6 +45,7 @@ function metToStrength(met) {
 
 export default function RegisterScreen({ navigation }) {
   const { colors, isDark } = useTheme();
+  const { refreshUser }    = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [email,          setEmail]          = useState('');
@@ -56,6 +61,13 @@ export default function RegisterScreen({ navigation }) {
   const [agreed,         setAgreed]         = useState(false);
   const [hasOpenedTerms, setHasOpenedTerms] = useState(false);
 
+  const [verifyMode,     setVerifyMode]     = useState(false);
+  const [verifyChecking, setVerifyChecking] = useState(false);
+  const [verifyError,    setVerifyError]    = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendLoading,  setResendLoading]  = useState(false);
+  const [resendSent,     setResendSent]     = useState(false);
+
   const passTimer    = useRef(null);
   const confirmTimer = useRef(null);
 
@@ -63,6 +75,12 @@ export default function RegisterScreen({ navigation }) {
     clearTimeout(passTimer.current);
     clearTimeout(confirmTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const id = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendCooldown]);
 
   // ── Masked password input handlers ────────────────────────────────────────
   const handlePassChange = (t) => {
@@ -150,7 +168,9 @@ export default function RegisterScreen({ navigation }) {
     setFieldErrors({});
     setLoading(true);
     try {
-      await register(email.trim().toLowerCase(), password);
+      const user = await register(email.trim().toLowerCase(), password);
+      await sendEmailVerification(user);
+      setVerifyMode(true);
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         setFieldErrors({ email: 'An account with this email already exists. Try signing in instead.' });
@@ -161,6 +181,177 @@ export default function RegisterScreen({ navigation }) {
       setLoading(false);
     }
   };
+
+  const handleVerifyCheck = async () => {
+    setVerifyChecking(true);
+    setVerifyError('');
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setVerifyError('Session expired. Please go back and register again.');
+        return;
+      }
+      await currentUser.reload();
+      if (auth.currentUser.emailVerified) {
+        await setDoc(doc(db, COLLECTIONS.USERS, auth.currentUser.uid), {
+          userId: auth.currentUser.uid,
+          email: auth.currentUser.email,
+          displayName: auth.currentUser.displayName || null,
+          createdAt: serverTimestamp(),
+          profileSetupComplete: false,
+          emailVerified: true,
+        });
+        refreshUser();
+      } else {
+        setVerifyError('Email not verified yet. Please check your inbox.');
+      }
+    } catch {
+      setVerifyError('Something went wrong. Please try again.');
+    } finally {
+      setVerifyChecking(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || resendLoading) return;
+    setResendLoading(true);
+    setVerifyError('');
+    setResendSent(false);
+    try {
+      await sendEmailVerification(auth.currentUser);
+      setResendSent(true);
+      setResendCooldown(60);
+    } catch {
+      setVerifyError('Failed to resend. Please try again shortly.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleBack = async () => {
+    try { await signOut(auth); } catch { /* non-critical */ }
+    setVerifyMode(false);
+    setVerifyError('');
+    setResendCooldown(0);
+    setResendSent(false);
+    setEmail('');
+    setPassword('');
+    setPassDisplay('');
+    setConfirm('');
+    setConfirmDisplay('');
+    setShowPass(false);
+    setShowConfirm(false);
+    setPassFocused(false);
+    setFieldErrors({});
+    setAgreed(false);
+    setHasOpenedTerms(false);
+  };
+
+  if (verifyMode) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
+        <ScrollView
+          contentContainerStyle={styles.verifyScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="Go back to registration form"
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+
+          <View style={styles.verifyCard}>
+            <View style={styles.verifyIconWrap}>
+              <Ionicons name="mail-outline" size={36} color={colors.primary} />
+            </View>
+
+            <Text style={styles.verifyTitle}>Verify Your Email</Text>
+            <Text style={styles.verifyMessage}>
+              {'We sent a verification link to '}
+              <Text style={styles.verifyEmail}>{email.trim().toLowerCase()}</Text>
+              {'. Please check your inbox and click the link to continue.'}
+            </Text>
+
+            {verifyError ? (
+              <View
+                style={styles.errorBox}
+                accessible={true}
+                accessibilityLiveRegion="polite"
+                accessibilityLabel={verifyError}
+              >
+                <Ionicons name="alert-circle" size={16} color={colors.error} />
+                <Text style={styles.errorText} maxFontSizeMultiplier={1.5}>{verifyError}</Text>
+              </View>
+            ) : null}
+
+            {resendSent && resendCooldown > 0 ? (
+              <View
+                style={styles.resendConfirmBox}
+                accessible={true}
+                accessibilityLiveRegion="polite"
+              >
+                <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+                <Text style={styles.resendConfirmText}>Verification email resent successfully.</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.primaryBtn, verifyChecking && styles.btnDisabled]}
+              onPress={handleVerifyCheck}
+              disabled={verifyChecking}
+              accessibilityRole="button"
+              accessibilityLabel="I have verified my email"
+              accessibilityState={{ busy: verifyChecking }}
+            >
+              {verifyChecking
+                ? <ActivityIndicator color={colors.textInverse} />
+                : <Text style={styles.primaryBtnText}>I've Verified My Email</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.resendBtn,
+                (resendCooldown > 0 || resendLoading) && styles.resendBtnDisabled,
+              ]}
+              onPress={handleResend}
+              disabled={resendCooldown > 0 || resendLoading}
+              accessibilityRole="button"
+              accessibilityLabel={
+                resendCooldown > 0
+                  ? `Resend available in ${resendCooldown} seconds`
+                  : 'Resend verification email'
+              }
+              accessibilityState={{ disabled: resendCooldown > 0 || resendLoading }}
+            >
+              {resendLoading
+                ? <ActivityIndicator color={colors.primary} size="small" />
+                : (
+                  <Text style={[
+                    styles.resendText,
+                    (resendCooldown > 0 || resendLoading) && styles.resendTextDisabled,
+                  ]}>
+                    {resendCooldown > 0 ? `Resend Email (${resendCooldown}s)` : 'Resend Email'}
+                  </Text>
+                )
+              }
+            </TouchableOpacity>
+
+            <Text style={styles.verifyHint}>
+              Check your spam folder if you don't see the email in your inbox.
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -492,6 +683,8 @@ const makeStyles = (c) => StyleSheet.create({
     ...Typography.body,
     color: c.textPrimary,
     paddingVertical: Spacing.sm,
+    outlineStyle: 'none',
+    outlineWidth: 0,
   },
   eyeBtn: { minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
   errorBox: {
@@ -527,6 +720,7 @@ const makeStyles = (c) => StyleSheet.create({
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'stretch',
     marginTop: Spacing.xs,
   },
   btnDisabled:    { opacity: 0.5 },
@@ -545,4 +739,56 @@ const makeStyles = (c) => StyleSheet.create({
   footerText:     { ...Typography.body, color: c.textSecondary },
   footerLink:     { minHeight: MIN_TOUCH, justifyContent: 'center', paddingHorizontal: Spacing.xs },
   footerLinkText: { ...Typography.body, color: c.primaryContrast, fontWeight: '600' },
+
+  verifyScroll: {
+    flexGrow: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+    gap: Spacing.lg,
+  },
+  verifyCard: {
+    backgroundColor: c.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.xl,
+    borderWidth: 1,
+    borderColor: c.border,
+    gap: Spacing.md,
+    alignItems: 'center',
+  },
+  verifyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: c.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
+  },
+  verifyTitle:        { ...Typography.h2, color: c.textPrimary, textAlign: 'center' },
+  verifyMessage:      { ...Typography.body, color: c.textSecondary, textAlign: 'center', lineHeight: 22 },
+  verifyEmail:        { ...Typography.body, color: c.primary, fontWeight: '600' },
+  verifyHint:         { ...Typography.caption, color: c.textTertiary, textAlign: 'center', marginTop: Spacing.xs },
+  resendBtn: {
+    height: 48,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: c.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+  },
+  resendBtnDisabled:  { borderColor: c.border },
+  resendText:         { ...Typography.button, color: c.primary },
+  resendTextDisabled: { color: c.textTertiary },
+  resendConfirmBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: c.successLight,
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    alignSelf: 'stretch',
+  },
+  resendConfirmText: { ...Typography.bodySmall, color: c.success, flex: 1 },
 });

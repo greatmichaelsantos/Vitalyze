@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Vitalyze",
+    "name": "Mend",
     "slug": "vitalyze",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,8 +8,8 @@
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./src/assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#6C47FF"
+      "resizeMode": "cover",
+      "backgroundColor": "#8B7FFF"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/adaptive-icon.png",
-        "backgroundColor": "#6C47FF"
+        "backgroundColor": "#8B7FFF"
       },
       "package": "com.vitalyze.app",
       "permissions": [
@@ -30,7 +30,7 @@
       ]
     },
     "web": {
-      "favicon": "./src/assets/favicon.png",
+      "favicon": "./src/assets/favicon-32.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -38,16 +38,18 @@
         "expo-notifications",
         {
           "icon": "./src/assets/notification-icon.png",
-          "color": "#6C47FF",
+          "color": "#8B7FFF",
           "sounds": []
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
-        "projectId": "your-eas-project-id"
+        "projectId": "15f7ecb8-989e-4484-b8c3-576b7cb585d1"
       }
-    }
+    },
+    "owner": "kellll"
   }
 }

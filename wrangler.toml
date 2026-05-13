@@ -1,0 +1,5 @@
+name = "vitalyze-auth"
+main = "cloudflare-worker/index.js"
+
+[triggers]
+crons = ["0 12 * * *"]

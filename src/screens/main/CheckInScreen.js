@@ -1,17 +1,18 @@
 // ============================================================
-// CHECK-IN SCREEN — 4-Step Wizard
+// CHECK-IN SCREEN — 5-Step Wizard
 // ============================================================
 
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Animated, StatusBar, SafeAreaView, ActivityIndicator, Alert, TextInput,
+  Modal, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { db } from '../../../firebase';
@@ -30,11 +31,19 @@ import AlertCard from '../../components/AlertCard';
 
 const TOTAL_STEPS = 5;
 
+const CRISIS_HOTLINES = [
+  { label: 'Hopeline PH',         number: '8804-4673' },
+  { label: 'NCMH Crisis Hotline', number: '1553' },
+  { label: 'In Touch Crisis Line', number: '0917-800-8654' },
+  { label: 'Text HELLO to',       number: '4673' },
+];
+
 const DEFAULT_FORM = {
   mood: 3, stress: 3, anxiety: 3, loneliness: 3, motivation: 3,
   sleep: 7, sleepQuality: 3, exercise: 'none', water: 4, symptoms: [],
   meals: 3, coffee: 0, energyDrinks: 0, alcohol: 0, eatingHabits: [],
   mealDetails: [],
+  everythingStop: 'Never', betterWithout: 'Never', feelEmpty: 'Never', reasonsToKeepGoing: 'Never',
 };
 
 export default function CheckInScreen({ navigation }) {
@@ -47,6 +56,8 @@ export default function CheckInScreen({ navigation }) {
   const [form,    setForm]    = useState({ ...DEFAULT_FORM });
   const [loading, setLoading] = useState(false);
   const [result,  setResult]  = useState(null);
+  const [showCrisisModal,    setShowCrisisModal]    = useState(false);
+  const [openEndedResponses, setOpenEndedResponses] = useState({});
   const progress = useRef(new Animated.Value(1 / TOTAL_STEPS)).current;
 
   // Reset mealDetails every time this screen comes into focus so slots never
@@ -68,7 +79,10 @@ export default function CheckInScreen({ navigation }) {
 
   const goNext = () => {
     const next = step + 1;
-    if (next <= TOTAL_STEPS) { setStep(next); animateProgress(next); }
+    if (next <= 7) {
+      setStep(next);
+      if (next <= TOTAL_STEPS) animateProgress(next);
+    }
   };
 
   const goBack = () => {
@@ -82,41 +96,49 @@ export default function CheckInScreen({ navigation }) {
     }
   };
 
-  const handleSubmit = async (overrideMealDetails) => {
+  const handleSubmit = async (responses = {}) => {
     setLoading(true);
-    const submitForm = overrideMealDetails !== undefined
-      ? { ...form, mealDetails: overrideMealDetails }
-      : form;
+    const submitForm = { ...form, openEndedResponses: responses };
     try {
       const data = await saveCheckIn(user.uid, submitForm);
       setResult(data.analysis);
-      setStep(5);
-      animateProgress(5);
+      setStep(8);
+      animateProgress(8);
+      if (data.analysis.selfHarmRisk === 'medium' || data.analysis.selfHarmRisk === 'high') {
+        setShowCrisisModal(true);
+      }
       if (data.analysis.alerts?.length > 0) await notifyForAlerts(data.analysis.alerts);
       // Update circle member doc if user is in a circle
       try {
         const circleId = await AsyncStorage.getItem(`circle_id_${user.uid}`);
         if (circleId) {
           const lastCheckInData = {
-            mood:         submitForm.mood         ?? null,
-            stress:       submitForm.stress       ?? null,
-            anxiety:      submitForm.anxiety      ?? null,
-            loneliness:   submitForm.loneliness   ?? null,
-            motivation:   submitForm.motivation   ?? null,
-            sleep:        submitForm.sleep        ?? null,
-            sleepQuality: submitForm.sleepQuality ?? null,
-            exercise:     submitForm.exercise     ?? null,
-            water:        submitForm.water        ?? null,
-            coffee:       submitForm.coffee       ?? null,
-            energyDrinks: submitForm.energyDrinks ?? null,
-            alcohol:      submitForm.alcohol      ?? null,
-            eatingHabits: submitForm.eatingHabits ?? null,
-            mealDetails:  submitForm.mealDetails  ?? [],
+            mood:               submitForm.mood               ?? null,
+            stress:             submitForm.stress             ?? null,
+            anxiety:            submitForm.anxiety            ?? null,
+            loneliness:         submitForm.loneliness         ?? null,
+            motivation:         submitForm.motivation         ?? null,
+            sleep:              submitForm.sleep              ?? null,
+            sleepQuality:       submitForm.sleepQuality       ?? null,
+            exercise:           submitForm.exercise           ?? null,
+            water:              submitForm.water              ?? null,
+            coffee:             submitForm.coffee             ?? null,
+            energyDrinks:       submitForm.energyDrinks       ?? null,
+            alcohol:            submitForm.alcohol            ?? null,
+            eatingHabits:       submitForm.eatingHabits       ?? null,
+            mealDetails:        submitForm.mealDetails        ?? [],
+            everythingStop:     submitForm.everythingStop     ?? 'Never',
+            betterWithout:      submitForm.betterWithout      ?? 'Never',
+            feelEmpty:          submitForm.feelEmpty          ?? 'Never',
+            reasonsToKeepGoing: submitForm.reasonsToKeepGoing ?? 'Never',
           };
+          const userProfileSnap = await getDoc(doc(db, 'users', user.uid));
+          const photoURL = userProfileSnap.exists() ? (userProfileSnap.data().photoURL ?? null) : null;
           await setDoc(
             doc(db, 'circleMembers', circleId, 'members', user.uid),
             {
               displayName:     user.displayName || user.email?.split('@')[0] || 'User',
+              ...(photoURL && { photoURL }),
               latestScores: {
                 overall:  data.analysis.overallScore,
                 physical: data.analysis.physicalScore,
@@ -153,6 +175,8 @@ export default function CheckInScreen({ navigation }) {
     setForm({ ...DEFAULT_FORM });
     setResult(null);
     setStep(1);
+    setShowCrisisModal(false);
+    setOpenEndedResponses({});
     animateProgress(1);
   };
 
@@ -163,16 +187,18 @@ export default function CheckInScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
       <View style={styles.header}>
-        {step < 5 ? (
+        {step < 8 ? (
           <TouchableOpacity onPress={step > 1 ? goBack : () => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
         ) : <View style={styles.backBtn} />}
-        <Text style={styles.headerTitle}>{step < 5 ? `Step ${step} of 4` : 'Your Insights'}</Text>
+        <Text style={styles.headerTitle}>
+          {step <= 5 ? `Step ${step} of 5` : step === 8 ? 'Your Insights' : 'Check-in'}
+        </Text>
         <View style={styles.backBtn} />
       </View>
 
-      {step < 5 && (
+      {step <= 5 && (
         <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
           <Animated.View style={[styles.progressFill, { width: progressWidth, backgroundColor: colors.primary }]} />
         </View>
@@ -188,12 +214,38 @@ export default function CheckInScreen({ navigation }) {
         {step === 2 && <Step2 form={form} setForm={setForm} colors={colors} />}
         {step === 3 && <Step3 form={form} setForm={setForm} colors={colors} />}
         {step === 4 && <MealDetailStep form={form} setForm={setForm} colors={colors} />}
-        {step === 5 && <Step5 result={result} onReset={resetCheckIn} navigation={navigation} colors={colors} />}
+        {step === 5 && <EmotionalPulseStep form={form} setForm={setForm} colors={colors} />}
+        {step === 6 && <GoDeeperStep onSkip={() => handleSubmit({})} onYes={goNext} colors={colors} />}
+        {step === 7 && <OpenEndedStep responses={openEndedResponses} setResponses={setOpenEndedResponses} colors={colors} />}
+        {step === 8 && <Step5 result={result} onReset={resetCheckIn} navigation={navigation} colors={colors} />}
       </ScrollView>
 
-      {step < 5 && (
+      {(step <= 5 || step === 7) && (
         <View style={styles.footer}>
           {step < 4 ? (
+            <TouchableOpacity style={styles.primaryBtn} onPress={goNext} accessibilityRole="button">
+              <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Continue</Text>
+              <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+            </TouchableOpacity>
+          ) : step === 4 ? (
+            <View style={styles.skipDoneRow}>
+              <TouchableOpacity
+                style={[styles.skipBtn, { borderColor: colors.border }]}
+                onPress={() => { setForm((f) => ({ ...f, mealDetails: [] })); goNext(); }}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.skipBtnText, { color: colors.textSecondary }]}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.doneBtn, { backgroundColor: colors.primary }]}
+                onPress={goNext}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Continue</Text>
+                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+              </TouchableOpacity>
+            </View>
+          ) : step === 5 ? (
             <TouchableOpacity style={styles.primaryBtn} onPress={goNext} accessibilityRole="button">
               <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Continue</Text>
               <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
@@ -202,7 +254,7 @@ export default function CheckInScreen({ navigation }) {
             <View style={styles.skipDoneRow}>
               <TouchableOpacity
                 style={[styles.skipBtn, { borderColor: colors.border }, loading && styles.btnDisabled]}
-                onPress={() => handleSubmit([])}
+                onPress={() => handleSubmit({})}
                 disabled={loading}
                 accessibilityRole="button"
               >
@@ -210,7 +262,7 @@ export default function CheckInScreen({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.doneBtn, { backgroundColor: colors.primary }, loading && styles.btnDisabled]}
-                onPress={() => handleSubmit()}
+                onPress={() => handleSubmit(openEndedResponses)}
                 disabled={loading}
                 accessibilityRole="button"
               >
@@ -226,6 +278,45 @@ export default function CheckInScreen({ navigation }) {
           )}
         </View>
       )}
+
+      <Modal
+        visible={showCrisisModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCrisisModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={[modalStyles.card, { backgroundColor: colors.mentalAccent }]}>
+            <Text style={modalStyles.emoji}>💙</Text>
+            <Text style={modalStyles.title}>We're Here For You</Text>
+            <Text style={modalStyles.body}>
+              We noticed you might be going through something difficult. You are not alone. Free and confidential support is available anytime.
+            </Text>
+            {CRISIS_HOTLINES.map((h, i) => (
+              <React.Fragment key={h.label}>
+                {i > 0 && <View style={modalStyles.divider} />}
+                <TouchableOpacity
+                  style={modalStyles.hotlineRow}
+                  onPress={() => Linking.openURL(`tel:${h.number}`)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`${h.label} ${h.number}`}
+                >
+                  <Ionicons name="call-outline" size={15} color="rgba(255,255,255,0.8)" />
+                  <Text style={modalStyles.hotlineLabel}>{h.label}</Text>
+                  <Text style={modalStyles.hotlineNumber}>{h.number}</Text>
+                </TouchableOpacity>
+              </React.Fragment>
+            ))}
+            <TouchableOpacity
+              style={modalStyles.closeBtn}
+              onPress={() => setShowCrisisModal(false)}
+              accessibilityRole="button"
+            >
+              <Text style={modalStyles.closeBtnText}>I Understand</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -415,7 +506,117 @@ function MealDetailStep({ form, setForm, colors }) {
   );
 }
 
-// ─── Step 5 — Insights ───────────────────────────────────────
+// ─── Step 5 — Emotional Pulse ────────────────────────────────
+const PULSE_OPTIONS         = ['Never', 'Sometimes', 'Often', 'Always'];
+const PULSE_OPTIONS_REVERSE = ['Always', 'Often', 'Sometimes', 'Never'];
+
+function EmotionalPulseStep({ form, setForm, colors }) {
+  const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  return (
+    <View style={stepStyles.wrap}>
+      <Text style={[stepStyles.title,    { color: colors.textPrimary }]}>Emotional Pulse</Text>
+      <Text style={[stepStyles.subtitle, { color: colors.textSecondary }]}>
+        A few last questions about how you've been feeling lately.
+      </Text>
+
+      <SectionLabel label="How often do you feel like you just want everything to stop?" colors={colors} />
+      <View style={stepStyles.chipRow}>
+        {PULSE_OPTIONS.map((opt) => (
+          <Chip key={opt} label={opt} active={form.everythingStop === opt} onPress={() => set('everythingStop', opt)} colors={colors} />
+        ))}
+      </View>
+
+      <SectionLabel label="Do you find yourself thinking that others would be better off without you?" colors={colors} />
+      <View style={stepStyles.chipRow}>
+        {PULSE_OPTIONS.map((opt) => (
+          <Chip key={opt} label={opt} active={form.betterWithout === opt} onPress={() => set('betterWithout', opt)} colors={colors} />
+        ))}
+      </View>
+
+      <SectionLabel label="How often do you feel completely empty inside?" colors={colors} />
+      <View style={stepStyles.chipRow}>
+        {PULSE_OPTIONS.map((opt) => (
+          <Chip key={opt} label={opt} active={form.feelEmpty === opt} onPress={() => set('feelEmpty', opt)} colors={colors} />
+        ))}
+      </View>
+
+      <SectionLabel label="Do you feel like you have reasons to keep going tomorrow?" colors={colors} />
+      <View style={stepStyles.chipRow}>
+        {PULSE_OPTIONS_REVERSE.map((opt) => (
+          <Chip key={opt} label={opt} active={form.reasonsToKeepGoing === opt} onPress={() => set('reasonsToKeepGoing', opt)} colors={colors} />
+        ))}
+      </View>
+
+      <Text style={[pulseStyles.disclaimer, { color: colors.textTertiary }]}>
+        Your responses are private and help us personalize your wellness insights.
+      </Text>
+    </View>
+  );
+}
+
+// ─── Step 6 — Go Deeper interstitial ─────────────────────────
+function GoDeeperStep({ onSkip, onYes, colors }) {
+  return (
+    <View style={deeperStyles.wrap}>
+      <Text style={deeperStyles.icon}>✨</Text>
+      <Text style={[deeperStyles.title, { color: colors.textPrimary }]}>Go Deeper?</Text>
+      <Text style={[deeperStyles.subtitle, { color: colors.textSecondary }]}>
+        Answer a few more questions so Mend can better understand you and give you more personalized insights.
+      </Text>
+      <TouchableOpacity
+        style={[deeperStyles.yesBtn, { backgroundColor: colors.primary }]}
+        onPress={onYes}
+        accessibilityRole="button"
+      >
+        <Text style={[deeperStyles.yesBtnText, { color: colors.textInverse }]}>Yes, let's go</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[deeperStyles.skipBtn, { borderColor: colors.border }]}
+        onPress={onSkip}
+        accessibilityRole="button"
+      >
+        <Text style={[deeperStyles.skipBtnText, { color: colors.textSecondary }]}>Skip, get my insights</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─── Step 7 — Open-Ended Questions ───────────────────────────
+const OPEN_ENDED_QUESTIONS = [
+  { key: 'onMind',       label: "What's been on your mind lately?" },
+  { key: 'struggling',   label: "Is there something specific you've been struggling with?" },
+  { key: 'goodToday',    label: "What's one thing that made you smile or feel good today?" },
+  { key: 'draining',     label: "What's been draining your energy lately?" },
+  { key: 'anythingElse', label: "Is there anything else you'd like Mend to know about how you're feeling?" },
+];
+
+function OpenEndedStep({ responses, setResponses, colors }) {
+  return (
+    <View style={openStyles.wrap}>
+      <Text style={[openStyles.title, { color: colors.textPrimary }]}>Tell Us More</Text>
+      <Text style={[openStyles.subtitle, { color: colors.textSecondary }]}>
+        All questions are optional. Share as much or as little as you like.
+      </Text>
+      {OPEN_ENDED_QUESTIONS.map((q) => (
+        <View key={q.key} style={openStyles.fieldWrap}>
+          <Text style={[openStyles.qLabel, { color: colors.textPrimary }]}>{q.label}</Text>
+          <TextInput
+            style={[openStyles.textArea, { borderColor: colors.border, color: colors.textPrimary, backgroundColor: colors.surface }]}
+            value={responses[q.key] ?? ''}
+            onChangeText={(v) => setResponses((r) => ({ ...r, [q.key]: v }))}
+            placeholder="Type here…"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ─── Step 8 — Insights ───────────────────────────────────────
 function Step5({ result, onReset, navigation, colors }) {
   if (!result) {
     return (
@@ -659,6 +860,81 @@ const mealStyles = StyleSheet.create({
     height: MIN_TOUCH, borderStyle: 'dashed',
   },
   addBtnText: { ...Typography.label },
+});
+
+const pulseStyles = StyleSheet.create({
+  disclaimer: { ...Typography.caption, textAlign: 'center', marginTop: Spacing.md },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  card: {
+    borderRadius: 24,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  emoji:         { fontSize: 40, textAlign: 'center' },
+  title:         { fontSize: 20, fontWeight: '700', letterSpacing: -0.2, color: '#fff', textAlign: 'center' },
+  body:          { ...Typography.bodySmall, color: 'rgba(255,255,255,0.75)', textAlign: 'center', marginBottom: Spacing.xs },
+  divider:       { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.2)' },
+  hotlineRow:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xs + 2 },
+  hotlineLabel:  { ...Typography.label, color: 'rgba(255,255,255,0.9)', flex: 1 },
+  hotlineNumber: { ...Typography.label, fontWeight: '700', color: '#fff' },
+  closeBtn: {
+    marginTop: Spacing.sm,
+    borderRadius: Radius.full,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  closeBtnText: { ...Typography.button, color: '#fff' },
+});
+
+const deeperStyles = StyleSheet.create({
+  wrap:        { alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.xl * 2 },
+  icon:        { fontSize: 56 },
+  title:       { ...Typography.h2, textAlign: 'center' },
+  subtitle:    { ...Typography.body, textAlign: 'center' },
+  yesBtn: {
+    width: '100%', borderRadius: Radius.full, height: 54,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  yesBtnText:  { ...Typography.button },
+  skipBtn: {
+    width: '100%', borderRadius: Radius.full, height: 54,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5,
+  },
+  skipBtnText: { ...Typography.button },
+});
+
+const openStyles = StyleSheet.create({
+  wrap:      { gap: Spacing.md },
+  title:     { ...Typography.h2 },
+  subtitle:  { ...Typography.body, marginBottom: Spacing.xs },
+  fieldWrap: { gap: Spacing.xs },
+  qLabel:    { ...Typography.label },
+  textArea: {
+    borderWidth: 1.5,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    ...Typography.body,
+    minHeight: 90,
+  },
 });
 
 const s4Styles = StyleSheet.create({

@@ -12,8 +12,8 @@ import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 
 const FAQ_ITEMS = [
   {
-    question: 'What is Vitalyze?',
-    answer: 'Vitalyze is a personal health monitoring app that uses AI and a Health Connection Map to track your daily wellness and detect patterns over time.',
+    question: 'What is Mend?',
+    answer: 'Mend is a personal health monitoring app that uses AI and a Health Connection Map to track your daily wellness and detect patterns over time.',
   },
   {
     question: 'What is the Health Connection Map?',
@@ -29,7 +29,7 @@ const FAQ_ITEMS = [
   },
   {
     question: 'Is my data private?',
-    answer: 'Yes. Your data is stored securely in Firebase and is only accessible to you. Vitalyze never sells or shares your personal health data.',
+    answer: 'Yes. Your data is stored securely in Firebase and is only accessible to you. Mend never sells or shares your personal health data.',
   },
   {
     question: 'How often should I check in?',
@@ -175,7 +175,7 @@ export default function FAQScreen({ navigation }) {
             style={[styles.introText, { color: colors.primaryContrast }]}
             maxFontSizeMultiplier={1.4}
           >
-            Answers to the most common questions about Vitalyze.
+            Answers to the most common questions about Mend.
           </Text>
         </View>
 

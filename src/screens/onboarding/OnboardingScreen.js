@@ -17,7 +17,7 @@ const SLIDES = [
     icon: 'pulse',
     iconBg: Colors.primaryLight,
     iconColor: Colors.primary,
-    title: 'Welcome to Vitalyze',
+    title: 'Welcome to Mend',
     subtitle:
       'Your personal health companion. Track how you feel every day and discover patterns that matter for your long-term wellbeing.',
   },
@@ -154,7 +154,7 @@ export default function OnboardingScreen({ navigation }) {
           style={[styles.nextBtn, finishing && { opacity: 0.7 }]}
           onPress={handleNext}
           disabled={finishing}
-          accessibilityLabel={currentIndex === SLIDES.length - 1 ? 'Get started with Vitalyze' : `Next, slide ${currentIndex + 2} of ${SLIDES.length}`}
+          accessibilityLabel={currentIndex === SLIDES.length - 1 ? 'Get started with Mend' : `Next, slide ${currentIndex + 2} of ${SLIDES.length}`}
           accessibilityRole="button"
           accessibilityState={{ disabled: finishing }}
         >

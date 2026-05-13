@@ -2,10 +2,13 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, KeyboardAvoidingView, Platform, StatusBar,
-  ActivityIndicator, SafeAreaView,
+  ActivityIndicator, SafeAreaView, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../../../firebase';
 import { login, getFriendlyAuthError } from '../../services/authService';
+import { sendEmail } from '../../services/emailService';
 import { useTheme } from '../../context/ThemeContext';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 
@@ -19,6 +22,8 @@ export default function LoginScreen({ navigation }) {
   const [showPass,    setShowPass]   = useState(false);
   const [loading,     setLoading]    = useState(false);
   const [error,       setError]      = useState('');
+  const [resetMsg,    setResetMsg]   = useState('');
+  const [resetErr,    setResetErr]   = useState('');
   const passTimer = useRef(null);
 
   useEffect(() => () => { clearTimeout(passTimer.current); }, []);
@@ -52,13 +57,43 @@ export default function LoginScreen({ navigation }) {
     return null;
   };
 
+  const handleForgotPassword = async () => {
+    setResetMsg('');
+    setResetErr('');
+    if (!email.trim()) {
+      setResetErr('Please enter your email address first.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+      setResetMsg('Password reset email sent. Check your inbox.');
+    } catch {
+      setResetErr('Failed to send reset email. Please try again.');
+    }
+  };
+
   const handleLogin = async () => {
     const err = validate();
     if (err) { setError(err); return; }
     setError('');
+    setResetMsg('');
+    setResetErr('');
     setLoading(true);
     try {
       await login(email.trim().toLowerCase(), password);
+      const u = auth.currentUser;
+      if (u?.email) {
+        const name = u.displayName || u.email.split('@')[0];
+        const when = new Date().toLocaleString('en-US', {
+          month: 'long', day: 'numeric', year: 'numeric',
+          hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+        });
+        sendEmail(
+          u.email,
+          'New login to your Mend account',
+          `<p>Hi ${name},</p><p>You just logged in to Mend on ${when}. If this wasn't you, please change your password immediately.</p>`
+        ).catch(() => {});
+      }
     } catch (e) {
       setError(getFriendlyAuthError(e.code));
     } finally {
@@ -83,15 +118,14 @@ export default function LoginScreen({ navigation }) {
         >
           {/* Brand */}
           <View style={styles.brandWrap}>
-            <View
-              style={styles.logoCircle}
+            <Image
+              source={require('../../assets/icon.png')}
+              style={{ width: 80, height: 80 }}
               accessible={true}
               accessibilityRole="image"
-              accessibilityLabel="Vitalyze app logo"
-            >
-              <Ionicons name="pulse" size={40} color={colors.primary} />
-            </View>
-            <Text style={styles.appName} accessibilityRole="header">Vitalyze</Text>
+              accessibilityLabel="Mend app logo"
+            />
+            <Text style={styles.appName} accessibilityRole="header">Mend</Text>
             <Text style={styles.tagline} maxFontSizeMultiplier={1.5}>AI-driven health monitoring</Text>
           </View>
 
@@ -159,6 +193,40 @@ export default function LoginScreen({ navigation }) {
               </View>
             </View>
 
+            <TouchableOpacity
+              style={styles.forgotWrap}
+              onPress={handleForgotPassword}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+
+            {resetErr ? (
+              <View
+                style={styles.resetMsgBox}
+                accessible={true}
+                accessibilityLiveRegion="polite"
+                accessibilityLabel={resetErr}
+              >
+                <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+                <Text style={[styles.resetMsgText, { color: colors.error }]} maxFontSizeMultiplier={1.5}>{resetErr}</Text>
+              </View>
+            ) : null}
+
+            {resetMsg ? (
+              <View
+                style={styles.resetMsgBox}
+                accessible={true}
+                accessibilityLiveRegion="polite"
+                accessibilityLabel={resetMsg}
+              >
+                <Ionicons name="checkmark-circle-outline" size={14} color={colors.success} />
+                <Text style={[styles.resetMsgText, { color: colors.success }]} maxFontSizeMultiplier={1.5}>{resetMsg}</Text>
+              </View>
+            ) : null}
+
             {error ? (
               <View
                 style={styles.errorBox}
@@ -183,6 +251,16 @@ export default function LoginScreen({ navigation }) {
                 ? <ActivityIndicator color={colors.textInverse} />
                 : <Text style={styles.primaryBtnText}>Sign In</Text>
               }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.qrBtn}
+              onPress={() => navigation.navigate('QRLogin')}
+              accessibilityRole="button"
+              accessibilityLabel="Login with QR Code"
+            >
+              <Ionicons name="qr-code-outline" size={18} color={colors.primary} />
+              <Text style={styles.qrBtnText}>Login with QR Code</Text>
             </TouchableOpacity>
           </View>
 
@@ -247,13 +325,20 @@ const makeStyles = (c) => StyleSheet.create({
     flex: 1,
     ...Typography.body,
     color: c.textPrimary,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    outlineStyle: 'none',
+    outlineWidth: 0,
   },
   eyeBtn: {
     padding: Spacing.xs,
     minWidth: MIN_TOUCH, minHeight: MIN_TOUCH,
     alignItems: 'center', justifyContent: 'center',
   },
+  forgotWrap: { alignSelf: 'flex-end', minHeight: MIN_TOUCH, justifyContent: 'center' },
+  forgotText: { fontSize: 13, color: c.primary },
+  resetMsgBox: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  resetMsgText: { ...Typography.caption, flex: 1 },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -272,6 +357,18 @@ const makeStyles = (c) => StyleSheet.create({
   },
   btnDisabled:    { opacity: 0.7 },
   primaryBtnText: { ...Typography.button, color: c.textInverse },
+  qrBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    borderWidth: 1,
+    borderColor: c.primary,
+    borderRadius: Radius.full,
+    height: 52,
+    marginTop: Spacing.xs,
+  },
+  qrBtnText: { ...Typography.button, color: c.primaryContrast },
   footer: {
     flexDirection: 'row', justifyContent: 'center',
     alignItems: 'center', gap: Spacing.xs,

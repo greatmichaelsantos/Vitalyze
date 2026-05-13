@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   TextInput,
   Modal,
   SafeAreaView,
@@ -13,6 +14,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,16 +27,21 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  onSnapshot,
   query,
   where,
   arrayUnion,
+  arrayRemove,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 
 import { db } from '../../../firebase';
+import { sendEmail } from '../../services/emailService';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
+import { PRESENCE_COLORS, PRESENCE_PRESETS } from '../../utils/presenceColors';
 import { getRiskColor, getRiskBgColor } from '../../utils/colors';
 import HealthScoreRing from '../../components/HealthScoreRing';
 
@@ -72,7 +79,6 @@ function isCheckedInToday(timestamp) {
 
 function exerciseDisplay(val) {
   if (!val || val === 'none' || val === 0) return 'None';
-  // If it's a recognised exercise type string, capitalise it
   if (typeof val === 'string') return val.charAt(0).toUpperCase() + val.slice(1);
   return String(val);
 }
@@ -90,7 +96,7 @@ const STATUS_EMOJIS = ['😊', '😴', '💪', '🔥', '😤', '😔', '☕', '�
 
 // ── Screen ─────────────────────────────────────────────────────────────────
 
-export default function CircleScreen({ navigation }) {
+export default function CircleScreen({ navigation, route }) {
   const { user }           = useAuth();
   const { colors, isDark } = useTheme();
   const styles             = useMemo(() => makeStyles(colors), [colors]);
@@ -125,20 +131,18 @@ export default function CircleScreen({ navigation }) {
   const [customStatus,  setCustomStatus]  = useState('');
   const [editingStatus, setEditingStatus] = useState(false);
   const [statusDraft,   setStatusDraft]   = useState('');
-  const [statusSaving,  setStatusSaving]  = useState(false);
+  const [statusSaving,    setStatusSaving]    = useState(false);
+  const [presenceStatus,  setPresenceStatus]  = useState('Online');
   const statusInputRef = useRef(null);
 
   // ── Load ────────────────────────────────────────────────────────────────
   const loadCircle = useCallback(async () => {
     try {
       setLoading(true);
-      // Step 1: primary key
       let storedId = await AsyncStorage.getItem(storageKey);
-      // Step 2: fallback key used by older versions
       if (!storedId) {
         storedId = await AsyncStorage.getItem(`circleId_${user.uid}`);
       }
-      // Step 3: Firestore query as last resort
       if (!storedId) {
         const q    = query(collection(db, 'circles'), where('members', 'array-contains', user.uid));
         const snap = await getDocs(q);
@@ -188,18 +192,56 @@ export default function CircleScreen({ navigation }) {
 
   useEffect(() => { loadCircle(); }, [loadCircle]);
 
-  // Load custom status from AsyncStorage for instant local display
+  useEffect(() => {
+    if (route?.params?.createMode) {
+      setCreating(true);
+    }
+  }, [route?.params?.createMode]);
+
   useEffect(() => {
     AsyncStorage.getItem(`custom_status_${user.uid}`)
       .then((v) => { if (v) setCustomStatus(v); })
       .catch(() => {});
   }, [user.uid]);
 
-  // Sync custom status from Firestore member doc once members load
   useEffect(() => {
     const me = membersData.find((m) => m.uid === user.uid);
     if (me?.customStatus !== undefined) setCustomStatus(me.customStatus || '');
+    if (me?.presenceStatus !== undefined) setPresenceStatus(me.presenceStatus || 'Online');
   }, [membersData, user.uid]);
+
+  // ── Real-time listener — circle doc (removal detection + circleData sync) ──
+  useEffect(() => {
+    if (!circleId) return;
+    const unsub = onSnapshot(doc(db, 'circles', circleId), (snap) => {
+      if (!snap.exists() || !snap.data()?.members?.includes(user.uid)) {
+        AsyncStorage.removeItem(storageKey).catch(() => {});
+        setCircleId(null);
+        setCircleData(null);
+        setMembersData([]);
+        navigation.navigate('Home');
+        return;
+      }
+      setCircleData(snap.data());
+    });
+    return () => unsub();
+  }, [circleId, storageKey, user.uid, navigation]);
+
+  // ── Real-time listener — members subcollection (instant add/remove sync) ──
+  useEffect(() => {
+    if (!circleId) return;
+    const unsub = onSnapshot(
+      collection(db, 'circleMembers', circleId, 'members'),
+      (snap) => {
+        setMembersData(
+          snap.docs
+            .filter((d) => !d.data().removed)
+            .map((d) => ({ uid: d.id, ...d.data() }))
+        );
+      }
+    );
+    return () => unsub();
+  }, [circleId]);
 
   // ── Save custom status ───────────────────────────────────────────────────
   const handleSaveStatus = async () => {
@@ -220,6 +262,22 @@ export default function CircleScreen({ navigation }) {
       console.warn('CircleScreen saveStatus:', err);
     } finally {
       setStatusSaving(false);
+    }
+  };
+
+  // ── Select presence status ───────────────────────────────────────────────
+  const handleSelectPresence = async (status) => {
+    setPresenceStatus(status);
+    try {
+      if (circleId) {
+        await setDoc(
+          doc(db, 'circleMembers', circleId, 'members', user.uid),
+          { presenceStatus: status },
+          { merge: true }
+        );
+      }
+    } catch (err) {
+      console.warn('CircleScreen savePresence:', err);
     }
   };
 
@@ -249,6 +307,7 @@ export default function CircleScreen({ navigation }) {
           latestRiskLevel:  'Low',
           lastCheckedIn:    null,
           lastCheckInData:  {},
+          presenceStatus:   'Online',
         }
       );
       await AsyncStorage.setItem(storageKey, circleRef.id);
@@ -290,12 +349,38 @@ export default function CircleScreen({ navigation }) {
           latestRiskLevel:  'Low',
           lastCheckedIn:    null,
           lastCheckInData:  {},
+          presenceStatus:   'Online',
         }
       );
       await AsyncStorage.setItem(storageKey, cid);
       setJoinVisible(false);
       setJoinCode('');
       await loadCircle();
+
+      // Fire-and-forget join notification emails
+      const memberName = user.displayName || user.email?.split('@')[0] || 'Someone';
+      if (user.email) {
+        sendEmail(
+          user.email,
+          'You joined a circle on Mend',
+          '<p>You successfully joined a circle. Stay connected with your wellness community!</p>'
+        ).catch(() => {});
+      }
+      const circleDoc = snap.docs[0].data();
+      if (circleDoc.creatorId && circleDoc.creatorId !== user.uid) {
+        getDoc(doc(db, 'users', circleDoc.creatorId))
+          .then((creatorSnap) => {
+            const creatorEmail = creatorSnap.exists() ? creatorSnap.data().email : null;
+            if (creatorEmail) {
+              sendEmail(
+                creatorEmail,
+                'Someone joined your circle on Mend',
+                `<p>${memberName} just joined your circle on Mend!</p>`
+              ).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       setJoinError('Failed to join circle. Please try again.');
       console.warn('CircleScreen handleJoin:', err);
@@ -311,7 +396,11 @@ export default function CircleScreen({ navigation }) {
       setCopyDone(true);
       setTimeout(() => setCopyDone(false), 2000);
     } catch {
-      Alert.alert('Copy failed', 'Could not copy to clipboard.');
+      if (Platform.OS === 'web') {
+        window.alert('Copy failed: Could not copy to clipboard.');
+      } else {
+        Alert.alert('Copy failed', 'Could not copy to clipboard.');
+      }
     }
   };
 
@@ -332,6 +421,124 @@ export default function CircleScreen({ navigation }) {
     setJoinError('');
   };
 
+  // ── Remove member (creator only) ─────────────────────────────────────────
+  const handleRemoveMember = (member) => {
+    const doRemove = async () => {
+      try {
+        await setDoc(
+          doc(db, 'circleMembers', circleId, 'members', member.uid),
+          { removed: true },
+          { merge: true }
+        );
+        await updateDoc(doc(db, 'circles', circleId), { members: arrayRemove(member.uid) });
+        await deleteDoc(doc(db, 'circleMembers', circleId, 'members', member.uid));
+        setMembersData((prev) => prev.filter((m) => m.uid !== member.uid));
+      } catch (err) {
+        console.log('[RemoveMember] circleId:', circleId);
+        console.log('[RemoveMember] member.uid:', member.uid);
+        console.log('[RemoveMember] user.uid:', user.uid);
+        console.log('[RemoveMember] error message:', err?.message);
+        console.log('[RemoveMember] error code:', err?.code);
+        console.log('[RemoveMember] full error:', err);
+        if (Platform.OS === 'web') {
+          window.alert('Failed to remove member. Please try again.');
+        } else {
+          Alert.alert('Error', 'Failed to remove member. Please try again.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Are you sure you want to remove ${member.displayName} from the circle?`)) {
+        doRemove();
+      }
+    } else {
+      Alert.alert(
+        'Remove Member',
+        `Are you sure you want to remove ${member.displayName} from the circle?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Remove', style: 'destructive', onPress: doRemove },
+        ]
+      );
+    }
+  };
+
+  // ── Delete circle (creator only) ─────────────────────────────────────────
+  const handleDeleteCircle = () => {
+    const doDelete = async () => {
+      try {
+        const membersSnap = await getDocs(collection(db, 'circleMembers', circleId, 'members'));
+        await Promise.all(membersSnap.docs.map((d) => deleteDoc(d.ref)));
+        await deleteDoc(doc(db, 'circles', circleId));
+        await AsyncStorage.removeItem(storageKey);
+        setCircleId(null);
+        setCircleData(null);
+        setMembersData([]);
+        navigation.navigate('Home');
+      } catch (err) {
+        console.warn('CircleScreen handleDeleteCircle:', err);
+        if (Platform.OS === 'web') {
+          window.alert('Failed to delete circle. Please try again.');
+        } else {
+          Alert.alert('Error', 'Failed to delete circle. Please try again.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('This will permanently delete the circle and remove all members. This cannot be undone.')) {
+        doDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Circle',
+        'This will permanently delete the circle and remove all members. This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
+  };
+
+  // ── Leave circle ──────────────────────────────────────────────────────────
+  const handleLeaveCircle = () => {
+    const doLeave = async () => {
+      try {
+        await updateDoc(doc(db, 'circles', circleId), { members: arrayRemove(user.uid) });
+        await deleteDoc(doc(db, 'circleMembers', circleId, 'members', user.uid));
+        await AsyncStorage.removeItem(storageKey);
+        setCircleId(null);
+        setCircleData(null);
+        setMembersData([]);
+        navigation.navigate('Home');
+      } catch (err) {
+        console.warn('CircleScreen handleLeaveCircle:', err);
+        if (Platform.OS === 'web') {
+          window.alert('Failed to leave circle. Please try again.');
+        } else {
+          Alert.alert('Error', 'Failed to leave circle. Please try again.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to leave this circle?')) {
+        doLeave();
+      }
+    } else {
+      Alert.alert(
+        'Leave Circle',
+        'Are you sure you want to leave this circle?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Leave', style: 'destructive', onPress: doLeave },
+        ]
+      );
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe}>
@@ -345,6 +552,7 @@ export default function CircleScreen({ navigation }) {
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
+          onClick={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
@@ -358,41 +566,6 @@ export default function CircleScreen({ navigation }) {
       {loading && (
         <View style={styles.centerFill}>
           <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      )}
-
-      {/* ── State 1: No circle ── */}
-      {!loading && !circleId && !creating && (
-        <View style={styles.emptyContainer}>
-          <View style={[styles.emptyIcon, { backgroundColor: colors.primaryLight }]}>
-            <Ionicons name="people-circle-outline" size={64} color={colors.primaryContrast} />
-          </View>
-          <Text style={styles.emptyTitle} maxFontSizeMultiplier={1.3}>Your Circle</Text>
-          <Text style={styles.emptyBody} maxFontSizeMultiplier={1.4}>
-            Connect with friends and family to stay accountable and see each other's wellbeing.
-          </Text>
-          <View style={styles.emptyActions}>
-            <TouchableOpacity
-              style={[styles.primaryBtn, styles.flex1]}
-              onPress={() => setCreating(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Create a Circle"
-            >
-              <Text style={styles.primaryBtnText} maxFontSizeMultiplier={1.3}>
-                Create a Circle
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.outlinedBtn, styles.flex1]}
-              onPress={() => setJoinVisible(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Join a Circle"
-            >
-              <Text style={styles.outlinedBtnText} maxFontSizeMultiplier={1.3}>
-                Join a Circle
-              </Text>
-            </TouchableOpacity>
-          </View>
         </View>
       )}
 
@@ -426,6 +599,7 @@ export default function CircleScreen({ navigation }) {
               <TouchableOpacity
                 style={[styles.outlinedBtn, styles.flex1]}
                 onPress={() => { setCreating(false); setCircleName(''); setCreateError(''); }}
+                onClick={() => { setCreating(false); setCircleName(''); setCreateError(''); }}
                 accessibilityRole="button"
                 accessibilityLabel="Cancel"
               >
@@ -434,6 +608,7 @@ export default function CircleScreen({ navigation }) {
               <TouchableOpacity
                 style={[styles.primaryBtn, styles.flex1, createBusy && styles.btnDisabled]}
                 onPress={handleCreate}
+                onClick={handleCreate}
                 disabled={createBusy}
                 accessibilityRole="button"
                 accessibilityLabel="Create Circle"
@@ -458,7 +633,7 @@ export default function CircleScreen({ navigation }) {
           style={styles.scroll}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
         >
           {/* Circle name */}
           <Text style={styles.circleName} maxFontSizeMultiplier={1.3}>
@@ -468,6 +643,37 @@ export default function CircleScreen({ navigation }) {
           {/* My Status section */}
           <View style={styles.statusCard}>
             <Text style={styles.statusCardLabel} maxFontSizeMultiplier={1.2}>My Status</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.presencePillRow}
+              keyboardShouldPersistTaps="handled"
+            >
+              {PRESENCE_PRESETS.map((p) => {
+                const selected = presenceStatus === p.key;
+                return (
+                  <TouchableOpacity
+                    key={p.key}
+                    style={[
+                      styles.presencePill,
+                      selected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    onPress={() => handleSelectPresence(p.key)}
+                    onClick={() => handleSelectPresence(p.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={p.label}
+                    accessibilityState={{ selected }}
+                  >
+                    <Text
+                      style={[styles.presencePillText, selected && { color: '#fff' }]}
+                      maxFontSizeMultiplier={1.2}
+                    >
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
             {!editingStatus ? (
               <View style={styles.statusDisplayRow}>
                 <Text
@@ -479,6 +685,7 @@ export default function CircleScreen({ navigation }) {
                 <View style={styles.statusEditIcon}>
                   <TouchableOpacity
                     onPress={() => { setStatusDraft(customStatus); setEditingStatus(true); }}
+                    onClick={() => { setStatusDraft(customStatus); setEditingStatus(true); }}
                     accessibilityRole="button"
                     accessibilityLabel="Edit status"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -500,6 +707,7 @@ export default function CircleScreen({ navigation }) {
                       key={emoji}
                       style={styles.emojiPill}
                       onPress={() => setStatusDraft((d) => (emoji + ' ' + d).slice(0, 60))}
+                      onClick={() => setStatusDraft((d) => (emoji + ' ' + d).slice(0, 60))}
                       accessibilityRole="button"
                       accessibilityLabel={`Insert ${emoji}`}
                     >
@@ -526,6 +734,7 @@ export default function CircleScreen({ navigation }) {
                   <TouchableOpacity
                     style={[styles.outlinedBtn, styles.flex1]}
                     onPress={() => setEditingStatus(false)}
+                    onClick={() => setEditingStatus(false)}
                     accessibilityRole="button"
                     accessibilityLabel="Cancel status edit"
                   >
@@ -534,6 +743,7 @@ export default function CircleScreen({ navigation }) {
                   <TouchableOpacity
                     style={[styles.primaryBtn, styles.flex1, statusSaving && styles.btnDisabled]}
                     onPress={handleSaveStatus}
+                    onClick={handleSaveStatus}
                     disabled={statusSaving}
                     accessibilityRole="button"
                     accessibilityLabel="Save status"
@@ -560,6 +770,7 @@ export default function CircleScreen({ navigation }) {
               <TouchableOpacity
                 style={styles.copyBtn}
                 onPress={handleCopy}
+                onClick={handleCopy}
                 accessibilityRole="button"
                 accessibilityLabel="Copy invite code"
               >
@@ -589,8 +800,10 @@ export default function CircleScreen({ navigation }) {
               member={member}
               isMe={member.uid === user.uid}
               isCreator={member.uid === circleData.creatorId}
+              viewerIsCreator={user.uid === circleData.creatorId}
               expanded={expanded.has(member.uid)}
               onToggle={() => toggleMember(member.uid)}
+              onRemove={() => handleRemoveMember(member)}
               colors={colors}
               styles={styles}
             />
@@ -601,6 +814,7 @@ export default function CircleScreen({ navigation }) {
             <TouchableOpacity
               style={[styles.outlinedBtn, styles.flex1]}
               onPress={() => setJoinVisible(true)}
+              onClick={() => setJoinVisible(true)}
               accessibilityRole="button"
               accessibilityLabel="Join other circle"
             >
@@ -609,6 +823,33 @@ export default function CircleScreen({ navigation }) {
                 Join other Circle
               </Text>
             </TouchableOpacity>
+          </View>
+          <View style={styles.rowActions}>
+            {user.uid === circleData.creatorId ? (
+              <TouchableOpacity
+                style={[styles.outlinedBtn, styles.flex1, { borderColor: '#EF4444', backgroundColor: '#EF4444' }]}
+                onPress={handleDeleteCircle}
+                onClick={handleDeleteCircle}
+                accessibilityRole="button"
+                accessibilityLabel="Delete circle"
+              >
+                <Text style={[styles.outlinedBtnText, { color: '#fff' }]} maxFontSizeMultiplier={1.3}>
+                  Delete Circle
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.outlinedBtn, styles.flex1, { borderColor: '#EF4444', backgroundColor: '#EF4444' }]}
+                onPress={handleLeaveCircle}
+                onClick={handleLeaveCircle}
+                accessibilityRole="button"
+                accessibilityLabel="Leave circle"
+              >
+                <Text style={[styles.outlinedBtnText, { color: '#fff' }]} maxFontSizeMultiplier={1.3}>
+                  Leave Circle
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
         </KeyboardAvoidingView>
@@ -654,6 +895,7 @@ export default function CircleScreen({ navigation }) {
               <TouchableOpacity
                 style={[styles.outlinedBtn, styles.flex1]}
                 onPress={closeJoin}
+                onClick={closeJoin}
                 accessibilityRole="button"
                 accessibilityLabel="Cancel"
               >
@@ -662,6 +904,7 @@ export default function CircleScreen({ navigation }) {
               <TouchableOpacity
                 style={[styles.primaryBtn, styles.flex1, joinBusy && styles.btnDisabled]}
                 onPress={handleJoin}
+                onClick={handleJoin}
                 disabled={joinBusy}
                 accessibilityRole="button"
                 accessibilityLabel="Join circle"
@@ -681,77 +924,107 @@ export default function CircleScreen({ navigation }) {
 
 // ── Member card ─────────────────────────────────────────────────────────────
 
-function MemberCard({ member, isMe, isCreator, expanded, onToggle, colors, styles }) {
-  const riskColor     = getRiskColor(member.latestRiskLevel);
-  const riskBg        = getRiskBgColor(member.latestRiskLevel, colors);
-  const checkedToday  = isCheckedInToday(member.lastCheckedIn);
-  const checkinTime   = formatLastCheckin(member.lastCheckedIn);
-  const avatarLetter  = (member.displayName || '?')[0].toUpperCase();
-  const scores        = member.latestScores || { overall: 0, physical: 0, mental: 0 };
-  const d             = member.lastCheckInData || {};
+function MemberCard({ member, isMe, isCreator, viewerIsCreator, expanded, onToggle, onRemove, colors, styles }) {
+  const riskColor    = getRiskColor(member.latestRiskLevel);
+  const riskBg       = getRiskBgColor(member.latestRiskLevel, colors);
+  const checkedToday = isCheckedInToday(member.lastCheckedIn);
+  const checkinTime  = formatLastCheckin(member.lastCheckedIn);
+  const avatarLetter = (member.displayName || '?')[0].toUpperCase();
+  const scores       = member.latestScores || { overall: 0, physical: 0, mental: 0 };
+  const d            = member.lastCheckInData || {};
 
   const youTag = isCreator && isMe ? 'You (Creator)' : isMe ? 'You' : null;
 
   return (
     <View style={styles.memberCard}>
       {/* Collapsed header row */}
-      <TouchableOpacity
-        style={styles.memberRow}
-        onPress={onToggle}
-        accessibilityRole="button"
-        accessibilityLabel={`${member.displayName}, ${expanded ? 'collapse' : 'expand'}`}
-        accessibilityState={{ expanded }}
-      >
-        {/* Avatar */}
-        <View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}>
-          <Text style={[styles.avatarLetter, { color: colors.primaryContrast }]}>
-            {avatarLetter}
-          </Text>
-        </View>
+      <View style={styles.memberRowContainer}>
+        <TouchableOpacity
+          style={styles.memberRow}
+          onPress={onToggle}
+          onClick={onToggle}
+          accessibilityRole="button"
+          accessibilityLabel={`${member.displayName}, ${expanded ? 'collapse' : 'expand'}`}
+          accessibilityState={{ expanded }}
+        >
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* Avatar */}
+            <View style={{ position: 'relative', flexShrink: 0 }}>
+              {member.photoURL ? (
+                <Image source={{ uri: member.photoURL }} style={styles.avatarImage} resizeMode="cover" />
+              ) : (
+                <View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}>
+                  <Text style={[styles.avatarLetter, { color: colors.primaryContrast }]}>
+                    {avatarLetter}
+                  </Text>
+                </View>
+              )}
+              <View
+                style={[
+                  styles.presenceDot,
+                  { backgroundColor: PRESENCE_COLORS[member.presenceStatus] ?? PRESENCE_COLORS.Online },
+                ]}
+              />
+            </View>
 
-        {/* Name + last check-in */}
-        <View style={styles.memberMeta}>
-          <View style={styles.memberNameRow}>
-            <Text
-              style={styles.memberName}
-              maxFontSizeMultiplier={1.3}
-              numberOfLines={1}
-            >
-              {member.displayName}
-            </Text>
-            {!!youTag && (
-              <View style={[styles.youTag, { backgroundColor: colors.primaryLight }]}>
+            {/* Name + last check-in */}
+            <View style={styles.memberMeta}>
+              <View style={styles.memberNameRow}>
                 <Text
-                  style={[styles.youTagText, { color: colors.primaryContrast }]}
-                  maxFontSizeMultiplier={1.2}
+                  style={styles.memberName}
+                  maxFontSizeMultiplier={1.3}
+                  numberOfLines={1}
                 >
-                  {youTag}
+                  {member.displayName}
                 </Text>
+                {!!youTag && (
+                  <View style={[styles.youTag, { backgroundColor: colors.primaryLight }]}>
+                    <Text
+                      style={[styles.youTagText, { color: colors.primaryContrast }]}
+                      maxFontSizeMultiplier={1.2}
+                    >
+                      {youTag}
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
+              <Text style={styles.memberTime} maxFontSizeMultiplier={1.3}>
+                {checkinTime ? `Last check-in: ${checkinTime}` : 'No check-ins yet'}
+              </Text>
+            </View>
+
+            {/* Risk badge */}
+            <View style={[styles.riskBadge, { backgroundColor: riskBg, borderColor: riskColor }]}>
+              <Text
+                style={[styles.riskBadgeText, { color: riskColor }]}
+                maxFontSizeMultiplier={1.2}
+              >
+                {member.latestRiskLevel || 'N/A'}
+              </Text>
+            </View>
+
+            {/* Chevron */}
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={colors.textTertiary}
+            />
           </View>
-          <Text style={styles.memberTime} maxFontSizeMultiplier={1.3}>
-            {checkinTime ? `Last check-in: ${checkinTime}` : 'No check-ins yet'}
-          </Text>
-        </View>
+        </TouchableOpacity>
 
-        {/* Risk badge */}
-        <View style={[styles.riskBadge, { backgroundColor: riskBg, borderColor: riskColor }]}>
-          <Text
-            style={[styles.riskBadgeText, { color: riskColor }]}
-            maxFontSizeMultiplier={1.2}
+        {/* Remove button — creator only, not for self */}
+        {viewerIsCreator && !isMe && (
+          <TouchableOpacity
+            onPress={onRemove}
+            onClick={onRemove}
+            style={styles.memberActionBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${member.displayName}`}
           >
-            {member.latestRiskLevel || 'N/A'}
-          </Text>
-        </View>
-
-        {/* Chevron */}
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={18}
-          color={colors.textTertiary}
-        />
-      </TouchableOpacity>
+            <Ionicons name="remove-circle-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Expanded content */}
       {expanded && (
@@ -881,31 +1154,6 @@ const makeStyles = (c) =>
     // Generic
     centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-    // ── State 1 ──────────────────────────────────────────────────────────
-    emptyContainer: {
-      flex:              1,
-      alignItems:        'center',
-      justifyContent:    'center',
-      paddingHorizontal: Spacing.xl,
-      gap:               Spacing.md,
-    },
-    emptyIcon: {
-      width:          120,
-      height:         120,
-      borderRadius:   Radius.full,
-      alignItems:     'center',
-      justifyContent: 'center',
-      marginBottom:   Spacing.sm,
-    },
-    emptyTitle: { ...Typography.h2, color: c.textPrimary,   textAlign: 'center' },
-    emptyBody:  { ...Typography.body, color: c.textSecondary, textAlign: 'center' },
-    emptyActions: {
-      flexDirection: 'row',
-      gap:           Spacing.sm,
-      marginTop:     Spacing.md,
-      width:         '100%',
-    },
-
     // ── State 2: Create form ──────────────────────────────────────────────
     createContainer: {
       flex:    1,
@@ -1000,6 +1248,27 @@ const makeStyles = (c) =>
     },
     emojiPillText: { fontSize: 18 },
 
+    // Presence pills
+    presencePillRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
+    presencePill: {
+      borderWidth:       1,
+      borderColor:       c.border,
+      borderRadius:      Radius.full,
+      paddingHorizontal: 10,
+      paddingVertical:   5,
+    },
+    presencePillText: { ...Typography.caption, color: c.textSecondary, fontWeight: '600' },
+    presenceDot: {
+      position:    'absolute',
+      bottom:      0,
+      right:       0,
+      width:       12,
+      height:      12,
+      borderRadius: 6,
+      borderWidth:  2,
+      borderColor:  c.surface,
+    },
+
     // Invite code card
     inviteCard: {
       backgroundColor: c.surface,
@@ -1041,14 +1310,33 @@ const makeStyles = (c) =>
       borderRadius:    Radius.lg,
       borderWidth:     1,
       borderColor:     c.border,
-      overflow:        'hidden',
+    },
+    memberRowContainer: {
+      flexDirection: 'row',
+      alignItems:    'center',
+      overflow:      'visible',
     },
     memberRow: {
+      flex:          1,
       flexDirection: 'row',
       alignItems:    'center',
       padding:       Spacing.md,
       gap:           Spacing.sm,
       minHeight:     MIN_TOUCH + 16,
+    },
+    memberActionBtn: {
+      paddingHorizontal: Spacing.sm,
+      alignItems:        'center',
+      justifyContent:    'center',
+      minWidth:          MIN_TOUCH,
+      minHeight:         MIN_TOUCH + 16,
+    },
+    avatarImage: {
+      width:        44,
+      height:       44,
+      borderRadius: 22,
+      overflow:     'hidden',
+      flexShrink:   0,
     },
     avatar: {
       width:          44,

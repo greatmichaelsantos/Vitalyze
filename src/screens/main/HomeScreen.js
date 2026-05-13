@@ -1,16 +1,18 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  RefreshControl, StatusBar, SafeAreaView, ActivityIndicator,
+  RefreshControl, StatusBar, SafeAreaView, ActivityIndicator, Image,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Animated, LayoutAnimation,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, getDoc, getDocs, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, setDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { getLatestInsight } from '../../services/firestoreService';
+import { getLatestInsight, getUserProfile } from '../../services/firestoreService';
 import { getScoreColor, getRiskColor, getRiskBgColor } from '../../utils/colors';
+import { PRESENCE_COLORS } from '../../utils/presenceColors';
 import { Typography, Spacing, Radius, MIN_TOUCH, RISK_LEVELS } from '../../utils/constants';
 import HealthScoreRing from '../../components/HealthScoreRing';
 import AlertCard from '../../components/AlertCard';
@@ -56,6 +58,9 @@ export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useTheme();
   const styles             = useMemo(() => makeStyles(colors), [colors]);
 
+  // Profile state
+  const [profile, setProfile] = useState(null);
+
   // Insight state
   const [insight,    setInsight]    = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -69,15 +74,52 @@ export default function HomeScreen({ navigation }) {
   const [circleLoading, setCircleLoading] = useState(true);
   const [expandedUid,   setExpandedUid]   = useState(null);
 
+  // Score info modal state
+  const [scoreInfoModal,      setScoreInfoModal]      = useState(false);
+  const [showPhysicalFormula, setShowPhysicalFormula] = useState(false);
+  const [showMentalFormula,   setShowMentalFormula]   = useState(false);
+  const [showOverallFormula,  setShowOverallFormula]  = useState(false);
+
+  // No-circle modal state
+  const [noCircleModal, setNoCircleModal] = useState(false);
+  const [isJoining,     setIsJoining]     = useState(false);
+  const [joinCode,      setJoinCode]      = useState('');
+  const [joinBusy,      setJoinBusy]      = useState(false);
+  const [joinError,     setJoinError]     = useState('');
+
   // Cache witty statuses per uid so they don't re-randomize on re-render.
   // Keyed by uid, cleared whenever the logged-in user changes (i.e. logout/login).
   const wittyStatusCache = useRef({});
   useEffect(() => { wittyStatusCache.current = {}; }, [user?.uid]);
 
+  useEffect(() => {
+    if (!scoreInfoModal) {
+      setShowPhysicalFormula(false);
+      setShowMentalFormula(false);
+      setShowOverallFormula(false);
+    }
+  }, [scoreInfoModal]);
+
+
+  useEffect(() => {
+    getUserProfile(user.uid).then(setProfile).catch(() => {});
+  }, [user.uid]);
+
+  const scoreExplanation = useMemo(() => {
+    if (!insight) return null;
+    return generateScoreExplanation(
+      { overall: insight.overallScore, physical: insight.physicalScore, mental: insight.mentalScore },
+      insight,
+      profile,
+    );
+  }, [insight, profile]);
+
   const load = useCallback(async () => {
     try {
       setError('');
       const data = await getLatestInsight(user.uid);
+      console.log('[HomeScreen] physicalBreakdown:', data?.physicalBreakdown);
+      console.log('[HomeScreen] mentalBreakdown:', data?.mentalBreakdown);
       setInsight(data);
     } catch {
       setError("Couldn't load your health data. Check your connection and pull down to retry.");
@@ -126,7 +168,9 @@ export default function HomeScreen({ navigation }) {
       const membersSnap = await getDocs(
         collection(db, 'circleMembers', storedId, 'members')
       );
-      const members = membersSnap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+      const members = membersSnap.docs
+        .filter((d) => !d.data().removed)
+        .map((d) => ({ uid: d.id, ...d.data() }));
       // Own row always first
       members.sort((a, b) => {
         if (a.uid === user.uid) return -1;
@@ -156,7 +200,9 @@ export default function HomeScreen({ navigation }) {
     const unsub = onSnapshot(
       collection(db, 'circleMembers', circleId, 'members'),
       (snap) => {
-        const members = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+        const members = snap.docs
+          .filter((d) => !d.data().removed)
+          .map((d) => ({ uid: d.id, ...d.data() }));
         members.sort((a, b) => {
           if (a.uid === user.uid) return -1;
           if (b.uid === user.uid) return 1;
@@ -182,6 +228,44 @@ export default function HomeScreen({ navigation }) {
     setExpandedUid((prev) => (prev === uid ? null : uid));
   }, []);
 
+  const handleOpenNoCircleModal = useCallback(() => {
+    setIsJoining(false);
+    setJoinCode('');
+    setJoinBusy(false);
+    setJoinError('');
+    setNoCircleModal(true);
+  }, []);
+
+  const handleModalJoin = useCallback(async () => {
+    const code = joinCode.trim().toUpperCase();
+    if (!code) { setJoinError('Enter an invite code.'); return; }
+    setJoinBusy(true);
+    setJoinError('');
+    try {
+      const q    = query(collection(db, 'circles'), where('inviteCode', '==', code));
+      const snap = await getDocs(q);
+      if (snap.empty) { setJoinError('No circle found with that code.'); setJoinBusy(false); return; }
+      const circleDoc   = snap.docs[0];
+      const newCircleId = circleDoc.id;
+      const prof        = await getUserProfile(user.uid);
+      await setDoc(doc(db, 'circleMembers', newCircleId, 'members', user.uid), {
+        displayName:    prof?.displayName || user.displayName || user.email,
+        photoURL:       prof?.photoURL    || user.photoURL    || null,
+        presenceStatus: 'Online',
+        joinedAt:       serverTimestamp(),
+      }, { merge: true });
+      await updateDoc(doc(db, 'circles', newCircleId), { members: arrayUnion(user.uid) });
+      await AsyncStorage.setItem(`circle_id_${user.uid}`, newCircleId);
+      setNoCircleModal(false);
+      await loadCircle();
+    } catch (err) {
+      console.warn('handleModalJoin:', err);
+      setJoinError('Something went wrong. Try again.');
+    } finally {
+      setJoinBusy(false);
+    }
+  }, [joinCode, user, loadCircle]);
+
   if (loading) return <LoadingSpinner fullScreen message="Loading your health data…" />;
 
   return (
@@ -201,7 +285,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.headerLeft}>
             <Text style={styles.greeting}>
               Good {getGreeting()},{' '}
-              {user.displayName || user.email?.split('@')[0] || 'there'}!
+              {profile?.displayName || user.displayName || user.email?.split('@')[0] || 'there'}!
             </Text>
             <Text style={styles.date}>{today}</Text>
           </View>
@@ -253,6 +337,7 @@ export default function HomeScreen({ navigation }) {
               navigation={navigation}
               insight={insight}
               wittyStatusCache={wittyStatusCache}
+              onShowModal={handleOpenNoCircleModal}
             />
           </>
         ) : (
@@ -271,14 +356,24 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             )}
 
-            <Text style={styles.sectionTitle}>
-              {isToday ? "Today's Scores" : `Scores from ${formatDate(insight.date)}`}
-            </Text>
+            <View style={styles.scoreTitleRow}>
+              <Text style={styles.sectionTitle}>
+                {isToday ? "Today's Scores" : `Scores from ${formatDate(insight.date)}`}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setScoreInfoModal(true)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="What does your score mean?"
+              >
+                <Ionicons name="information-circle-outline" size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.scoreRow}>
-              <ScoreCard score={insight.overallScore}  label="Overall"  subtitle="All factors" size={110} colors={colors} riskLevel={insight.riskLevel} />
-              <ScoreCard score={insight.physicalScore} label="Physical" subtitle="Body health" size={90}  colors={colors} />
-              <ScoreCard score={insight.mentalScore}   label="Mental"   subtitle="Mindset"     size={90}  colors={colors} />
+              <ScoreCard score={insight.physicalScore} label="Physical" size={90}  colors={colors} />
+              <ScoreCard score={insight.overallScore}  label="Overall"  size={100} colors={colors} riskLevel={insight.riskLevel} />
+              <ScoreCard score={insight.mentalScore}   label="Mental"   size={90}  colors={colors} />
             </View>
 
             <RiskBadge riskLevel={insight.riskLevel} colors={colors} />
@@ -320,29 +415,484 @@ export default function HomeScreen({ navigation }) {
               navigation={navigation}
               insight={insight}
               wittyStatusCache={wittyStatusCache}
+              onShowModal={handleOpenNoCircleModal}
             />
 
             {insight.alerts?.length > 0 && (
               <>
                 <Text style={styles.sectionTitle}>Active Alerts</Text>
-                {insight.alerts.map((alert) => <AlertCard key={alert.id} alert={alert} />)}
+                {insight.alerts.map((alert) => <AlertCard key={alert.id} alert={alert} onPress={() => navigation.navigate('Insights')} />)}
               </>
             )}
-
-            <View style={styles.quickLinks}>
-              <QuickLink icon="bulb-outline"      label="View Insights" color={colors.primary}  onPress={() => navigation.navigate('Insights')} colors={colors} />
-              <QuickLink icon="bar-chart-outline" label="Progress"      color={colors.physical} onPress={() => navigation.navigate('Progress')} colors={colors} />
-            </View>
           </>
         )}
       </ScrollView>
+
+      {/* ── Score Info Modal ── */}
+      <Modal
+        visible={scoreInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setScoreInfoModal(false)}
+      >
+        <View style={styles.infoModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setScoreInfoModal(false)}
+          />
+          <View style={[styles.infoModalCard, { backgroundColor: colors.surface }]}>
+            <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+              <Text style={[styles.infoModalHeader, { color: colors.textPrimary }]}>
+                {scoreExplanation ? 'Your Score Breakdown' : 'What Does Your Score Mean?'} 🧠
+              </Text>
+
+              {scoreExplanation ? (
+                <>
+                  {/* Overall */}
+                  <View style={styles.infoScoreSection}>
+                    <View style={styles.infoScoreHeaderRow}>
+                      <Text style={[styles.infoScoreNumber, { color: scoreExplanation.overall.color }]}>
+                        {scoreExplanation.overall.score}
+                      </Text>
+                      <Text style={[styles.infoScoreTitle, { color: colors.textPrimary }]}>Overall</Text>
+                    </View>
+                    <Text style={[styles.infoSummaryText, { color: colors.textSecondary }]}>
+                      {scoreExplanation.overall.summary}
+                    </Text>
+                    {insight?.physicalBreakdown && insight?.mentalBreakdown ? (
+                      <Text style={[styles.overallEquationText, { color: colors.textSecondary }]}>
+                        {`Physical (${insight.physicalScore}) + Mental (${insight.mentalScore}) ÷ 2 = Overall ${insight.overallScore}`}
+                      </Text>
+                    ) : (
+                      <FormulaToggle
+                        open={showOverallFormula}
+                        onToggle={() => setShowOverallFormula((v) => !v)}
+                        rows={OVERALL_FORMULA_ROWS}
+                        colors={colors}
+                        styles={styles}
+                      />
+                    )}
+                  </View>
+
+                  <View style={[styles.infoSectionDivider, { backgroundColor: colors.border }]} />
+
+                  {/* Physical */}
+                  <View style={styles.infoScoreSection}>
+                    <View style={styles.infoScoreHeaderRow}>
+                      <Text style={[styles.infoScoreNumber, { color: scoreExplanation.physical.color }]}>
+                        {scoreExplanation.physical.score}
+                      </Text>
+                      <Text style={[styles.infoScoreTitle, { color: colors.textPrimary }]}>Physical</Text>
+                    </View>
+                    {scoreExplanation.physical.factors.map((f, i) => (
+                      <InfoFactorRow key={i} factor={f} colors={colors} styles={styles} />
+                    ))}
+                    {insight?.physicalBreakdown ? (
+                      <BreakdownToggle
+                        open={showPhysicalFormula}
+                        onToggle={() => setShowPhysicalFormula((v) => !v)}
+                        breakdown={insight.physicalBreakdown}
+                        totalLabel="Your Physical score"
+                        totalScore={insight.physicalScore}
+                        colors={colors}
+                        styles={styles}
+                      />
+                    ) : (
+                      <FormulaToggle
+                        open={showPhysicalFormula}
+                        onToggle={() => setShowPhysicalFormula((v) => !v)}
+                        rows={PHYSICAL_FORMULA_ROWS}
+                        colors={colors}
+                        styles={styles}
+                      />
+                    )}
+                  </View>
+
+                  <View style={[styles.infoSectionDivider, { backgroundColor: colors.border }]} />
+
+                  {/* Mental */}
+                  <View style={styles.infoScoreSection}>
+                    <View style={styles.infoScoreHeaderRow}>
+                      <Text style={[styles.infoScoreNumber, { color: scoreExplanation.mental.color }]}>
+                        {scoreExplanation.mental.score}
+                      </Text>
+                      <Text style={[styles.infoScoreTitle, { color: colors.textPrimary }]}>Mental</Text>
+                    </View>
+                    {scoreExplanation.mental.factors.map((f, i) => (
+                      <InfoFactorRow key={i} factor={f} colors={colors} styles={styles} />
+                    ))}
+                    {insight?.mentalBreakdown ? (
+                      <BreakdownToggle
+                        open={showMentalFormula}
+                        onToggle={() => setShowMentalFormula((v) => !v)}
+                        breakdown={insight.mentalBreakdown}
+                        totalLabel="Your Mental score"
+                        totalScore={insight.mentalScore}
+                        colors={colors}
+                        styles={styles}
+                      />
+                    ) : (
+                      <FormulaToggle
+                        open={showMentalFormula}
+                        onToggle={() => setShowMentalFormula((v) => !v)}
+                        rows={MENTAL_FORMULA_ROWS}
+                        colors={colors}
+                        styles={styles}
+                      />
+                    )}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.infoModalIntro, { color: colors.textSecondary }]}>
+                    Your health score is Mend's way of summing up how you're doing — physically and mentally — based on what you shared in your check-in.
+                  </Text>
+                  {[
+                    { color: '#22C55E', bg: '#22C55E18', range: '80–100', label: "You're doing great! Keep it up." },
+                    { color: '#EAB308', bg: '#EAB30818', range: '60–79',  label: "Pretty good, but there's room to grow." },
+                    { color: '#F97316', bg: '#F9731618', range: '40–59',  label: "Some things need your attention." },
+                    { color: '#EF4444', bg: '#EF444418', range: '0–39',   label: "Your body or mind may need support right now." },
+                  ].map((item) => (
+                    <View key={item.range} style={[styles.infoRangePill, { backgroundColor: item.bg, borderColor: item.color + '50' }]}>
+                      <View style={[styles.infoRangeDot, { backgroundColor: item.color }]} />
+                      <Text style={[styles.infoRangeLabel, { color: item.color }]}>{item.range}</Text>
+                      <Text style={[styles.infoRangeText, { color: colors.textPrimary }]}>{item.label}</Text>
+                    </View>
+                  ))}
+                  <Text style={[styles.infoSubHeader, { color: colors.textPrimary }]}>What affects your score</Text>
+                  {[
+                    '💤  Sleep & Energy',
+                    '🏃  Exercise & Movement',
+                    '🥗  Diet & Hydration',
+                    '😊  Mood & Stress',
+                    '🧘  Emotional Wellbeing',
+                    '⚖️  BMI & Physical Health',
+                  ].map((item) => (
+                    <Text key={item} style={[styles.infoFactorRow, { color: colors.textSecondary }]}>{item}</Text>
+                  ))}
+                </>
+              )}
+
+              <Text style={[styles.infoFooterNote, { color: colors.textTertiary }]}>
+                Scores update every time you check in. The more honest you are, the more accurate your insights.
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.infoCloseBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setScoreInfoModal(false)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.infoCloseBtnText, { color: colors.textInverse }]}>Got it 👍</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── No Circle Modal ── */}
+      <Modal
+        visible={noCircleModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setNoCircleModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setNoCircleModal(false)}
+          />
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setNoCircleModal(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <View style={[styles.modalIconWrap, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="people-circle-outline" size={48} color={colors.primaryContrast} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Your Circle</Text>
+            <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
+              Connect with friends and family to stay accountable and see each other's wellbeing.
+            </Text>
+
+            {!isJoining ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => { setNoCircleModal(false); navigation.navigate('Circle', { createMode: true }); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create a Circle"
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.textInverse} />
+                  <Text style={[styles.modalBtnText, { color: colors.textInverse }]}>Create a Circle</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalOutlinedBtn, { borderColor: colors.primary }]}
+                  onPress={() => setIsJoining(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Join a Circle"
+                >
+                  <Text style={[styles.modalBtnText, { color: colors.primaryContrast }]}>Join a Circle</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    {
+                      borderColor:     joinError ? colors.error : colors.border,
+                      color:           colors.textPrimary,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                  placeholder="Enter invite code (e.g. ABC123)"
+                  placeholderTextColor={colors.textTertiary}
+                  value={joinCode}
+                  onChangeText={(v) => { setJoinCode(v); setJoinError(''); }}
+                  autoCapitalize="characters"
+                  autoFocus
+                  maxLength={8}
+                  accessibilityLabel="Invite code"
+                />
+                {!!joinError && (
+                  <Text style={[styles.modalErrorText, { color: colors.error }]}>{joinError}</Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary, opacity: joinBusy ? 0.6 : 1 }]}
+                  onPress={handleModalJoin}
+                  disabled={joinBusy}
+                  accessibilityRole="button"
+                  accessibilityLabel="Submit invite code"
+                >
+                  <Text style={[styles.modalBtnText, { color: colors.textInverse }]}>
+                    {joinBusy ? 'Joining…' : 'Submit'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalOutlinedBtn, { borderColor: colors.border }]}
+                  onPress={() => { setIsJoining(false); setJoinCode(''); setJoinError(''); }}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.modalBtnText, { color: colors.textSecondary }]}>Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
+  );
+}
+
+// ── Formula data ────────────────────────────────────────────────────────────
+
+const PHYSICAL_FORMULA_ROWS = [
+  { label: 'Sleep Duration',    value: 'up to 25 pts' },
+  { label: 'Exercise/Activity', value: 'up to 25 pts' },
+  { label: 'Hydration',         value: 'up to 20 pts' },
+  { label: 'Diet Quality',      value: 'up to 20 pts' },
+  { label: 'BMI Adjustment',    value: '±10 pts penalty' },
+  { divider: true },
+  { label: 'Max possible',      value: '= 100 pts', bold: true },
+];
+
+const MENTAL_FORMULA_ROWS = [
+  { label: 'Mood & Emotions',  value: 'up to 30 pts' },
+  { label: 'Stress Level',     value: 'up to 25 pts' },
+  { label: 'Sleep Quality',    value: 'up to 25 pts' },
+  { label: 'Emotional Safety', value: 'up to 20 pts' },
+  { divider: true },
+  { label: 'Max possible',     value: '= 100 pts', bold: true },
+];
+
+const OVERALL_FORMULA_ROWS = [
+  { label: 'Physical Score', value: '50% weight' },
+  { label: 'Mental Score',   value: '50% weight' },
+  { divider: true },
+  { label: 'Overall',        value: '(Physical + Mental) ÷ 2', bold: true },
+];
+
+// ── FormulaToggle ───────────────────────────────────────────────────────────
+
+function FormulaToggle({ open, onToggle, rows, colors, styles }) {
+  const rotation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotation, {
+      toValue:         open ? 1 : 0,
+      duration:        180,
+      useNativeDriver: true,
+    }).start();
+  }, [open]);
+
+  const handlePress = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    onToggle();
+  };
+
+  const rotateStyle = {
+    transform: [{
+      rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }),
+    }],
+  };
+
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.formulaToggle}
+        onPress={handlePress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="How is this calculated"
+        accessibilityState={{ expanded: open }}
+      >
+        <Text style={[styles.formulaToggleText, { color: colors.primary }]}>How is this calculated?</Text>
+        <Animated.View style={rotateStyle}>
+          <Ionicons name="chevron-down" size={12} color={colors.primary} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {open && (
+        <View style={[styles.formulaBox, { backgroundColor: colors.background }]}>
+          {rows.map((row, i) =>
+            row.divider ? (
+              <View key={i} style={[styles.formulaDivider, { backgroundColor: colors.border }]} />
+            ) : (
+              <View key={i} style={styles.formulaRow}>
+                <Text style={[
+                  row.bold ? styles.formulaTotalLabel : styles.formulaLabel,
+                  { color: colors.textPrimary },
+                ]}>
+                  {row.label}
+                </Text>
+                <Text style={[
+                  row.bold ? styles.formulaTotalValue : styles.formulaValue,
+                  { color: row.bold ? colors.textPrimary : colors.textSecondary },
+                ]}>
+                  {row.value}
+                </Text>
+              </View>
+            )
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── BreakdownToggle ─────────────────────────────────────────────────────────
+
+const factorPtColor = (earned, max) => {
+  if (earned < 0 || max === 0) return '#EF4444';
+  const ratio = earned / max;
+  if (ratio >= 1.0) return '#22C55E';
+  if (ratio >= 0.5) return '#EAB308';
+  return '#EF4444';
+};
+
+function BreakdownToggle({ open, onToggle, breakdown, totalLabel, totalScore, colors, styles }) {
+  const rotation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotation, {
+      toValue:         open ? 1 : 0,
+      duration:        180,
+      useNativeDriver: true,
+    }).start();
+  }, [open]);
+
+  const handlePress = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    onToggle();
+  };
+
+  const rotateStyle = {
+    transform: [{
+      rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }),
+    }],
+  };
+
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.formulaToggle}
+        onPress={handlePress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="How is this calculated"
+        accessibilityState={{ expanded: open }}
+      >
+        <Text style={[styles.formulaToggleText, { color: colors.primary }]}>How is this calculated?</Text>
+        <Animated.View style={rotateStyle}>
+          <Ionicons name="chevron-down" size={12} color={colors.primary} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {open && (
+        <View style={[styles.formulaBox, { backgroundColor: colors.background }]}>
+          {breakdown.map((item, i) => {
+            const isBMI   = item.max === 0;
+            const ptColor = factorPtColor(item.earned, item.max);
+            const ptText  = isBMI
+              ? `−${Math.abs(item.earned)} pts penalty`
+              : `${item.earned} / ${item.max} pts`;
+            return (
+              <View key={i} style={styles.bdRowWrap}>
+                <View style={styles.bdRowTop}>
+                  <Text style={styles.bdEmoji}>{item.emoji}</Text>
+                  <Text style={[styles.bdLabel, { color: colors.textPrimary }]}>{item.label}</Text>
+                  <Text style={[styles.bdPts, { color: ptColor }]}>{ptText}</Text>
+                </View>
+                {!!item.note && (
+                  <Text style={[styles.bdNote, { color: colors.textTertiary }]}>{item.note}</Text>
+                )}
+                {i < breakdown.length - 1 && (
+                  <View style={[styles.bdRowDivider, { backgroundColor: colors.border }]} />
+                )}
+              </View>
+            );
+          })}
+          <View style={[styles.bdTotalDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.bdTotalRow}>
+            <Text style={[styles.bdTotalLabel, { color: colors.textPrimary }]}>{totalLabel}:</Text>
+            <Text style={[styles.bdTotalValue, { color: scoreColor(totalScore) }]}>
+              {totalScore} / 100
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── InfoFactorRow ───────────────────────────────────────────────────────────
+
+function InfoFactorRow({ factor, colors, styles }) {
+  const dotColor =
+    factor.impact === 'positive' ? '#22C55E' :
+    factor.impact === 'negative' ? '#EF4444' : '#9CA3AF';
+  return (
+    <View style={styles.infoPersonFactorRow}>
+      <View style={[styles.infoPersonDot, { backgroundColor: dotColor }]} />
+      <Text style={[styles.infoPersonLabel, { color: colors.textPrimary }]}>{factor.label}</Text>
+      <Text style={[styles.infoPersonNote, { color: colors.textSecondary }]}>{factor.note}</Text>
+    </View>
   );
 }
 
 // ── Circle section ──────────────────────────────────────────────────────────
 
-function CircleSection({ circleId, circleData, circleMembers, circleLoading, expandedUid, onToggle, userId, colors, styles, navigation, insight, wittyStatusCache }) {
+function CircleSection({ circleId, circleData, circleMembers, circleLoading, expandedUid, onToggle, userId, colors, styles, navigation, insight, wittyStatusCache, onShowModal }) {
   if (circleLoading) {
     return (
       <View style={styles.circleSectionCard}>
@@ -371,7 +921,7 @@ function CircleSection({ circleId, circleData, circleMembers, circleLoading, exp
         <View style={styles.circleEmptyBtns}>
           <TouchableOpacity
             style={[styles.circleSmallPrimary, { flex: 1 }]}
-            onPress={() => navigation.navigate('Circle')}
+            onPress={onShowModal}
             accessibilityRole="button"
             accessibilityLabel="Create Circle"
           >
@@ -379,7 +929,7 @@ function CircleSection({ circleId, circleData, circleMembers, circleLoading, exp
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.circleSmallOutlined, { flex: 1 }]}
-            onPress={() => navigation.navigate('Circle')}
+            onPress={onShowModal}
             accessibilityRole="button"
             accessibilityLabel="Join Circle"
           >
@@ -480,11 +1030,21 @@ function MemberRow({ member, isMe, isCreator, expanded, onToggle, colors, styles
       >
         {/* Avatar with score pill */}
         <View style={styles.memberAvatarWrap}>
-          <View style={[styles.memberAvatar, { backgroundColor: colors.primaryLight }]}>
-            <Text style={[styles.memberAvatarLetter, { color: colors.primaryContrast }]}>
-              {avatarLetter}
-            </Text>
-          </View>
+          {member.photoURL ? (
+            <Image source={{ uri: member.photoURL }} style={styles.memberAvatarImage} resizeMode="cover" />
+          ) : (
+            <View style={[styles.memberAvatar, { backgroundColor: colors.primaryLight }]}>
+              <Text style={[styles.memberAvatarLetter, { color: colors.primaryContrast }]}>
+                {avatarLetter}
+              </Text>
+            </View>
+          )}
+          <View
+            style={[
+              styles.presenceDot,
+              { backgroundColor: PRESENCE_COLORS[member.presenceStatus] ?? PRESENCE_COLORS.Online },
+            ]}
+          />
           {hasScore && (
             <View style={[styles.scorePill, { backgroundColor: statusColor + '33' }]}>
               <Text style={[styles.scorePillText, { color: statusColor }]}>
@@ -627,7 +1187,7 @@ const ckStyles = StyleSheet.create({
 
 // ── Existing sub-components (unchanged) ────────────────────────────────────
 
-function ScoreCard({ score, label, subtitle, size, colors, riskLevel }) {
+function ScoreCard({ score, label, size, colors, riskLevel }) {
   return (
     <View style={scStyles.wrap}>
       <HealthScoreRing
@@ -637,9 +1197,6 @@ function ScoreCard({ score, label, subtitle, size, colors, riskLevel }) {
         strokeWidth={size > 100 ? 11 : 9}
         riskLevel={riskLevel}
       />
-      <Text style={[scStyles.subtitle, { color: colors.textSecondary }]} maxFontSizeMultiplier={1.3}>
-        {subtitle}
-      </Text>
     </View>
   );
 }
@@ -663,24 +1220,129 @@ function RiskBadge({ riskLevel, colors }) {
   );
 }
 
-function QuickLink({ icon, label, color, onPress, colors }) {
-  return (
-    <TouchableOpacity
-      style={[qlStyles.btn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <View style={[qlStyles.iconWrap, { backgroundColor: color + '18' }]}>
-        <Ionicons name={icon} size={22} color={color} />
-      </View>
-      <Text style={[qlStyles.label, { color: colors.textPrimary }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-    </TouchableOpacity>
-  );
-}
-
 // ── Utility functions ───────────────────────────────────────────────────────
+
+const scoreColor = (score) => {
+  if (score >= 80) return '#22C55E';
+  if (score >= 60) return '#EAB308';
+  if (score >= 40) return '#F97316';
+  return '#EF4444';
+};
+
+function generateScoreExplanation(scores, latestLog, profile) {
+  if (!latestLog) return null;
+  const nw  = latestLog.nodeWeights || {};
+  const shr = latestLog.selfHarmRisk || 'none';
+
+  // ── Physical factors ──
+  const physicalFactors = [];
+
+  const sleepW = nw['sleep_hours'];
+  if (sleepW !== undefined) {
+    if (sleepW >= 0.625) {
+      physicalFactors.push({ label: 'Sleep Duration', impact: 'positive', note: 'Getting 7+ hours — great for recovery' });
+    } else if (sleepW < 0.5) {
+      physicalFactors.push({ label: 'Sleep Duration', impact: 'negative', note: 'Less than 6 hours — body needs more rest' });
+    } else {
+      physicalFactors.push({ label: 'Sleep Duration', impact: 'neutral', note: '6–7 hours — close to target' });
+    }
+  }
+
+  const exerciseW = nw['exercise'];
+  if (exerciseW !== undefined) {
+    if (exerciseW > 0) {
+      physicalFactors.push({ label: 'Exercise', impact: 'positive', note: 'Active today — movement boosts physical score' });
+    } else {
+      physicalFactors.push({ label: 'Exercise', impact: 'negative', note: 'No activity logged today' });
+    }
+  }
+
+  const waterW = nw['water'];
+  if (waterW !== undefined) {
+    if (waterW >= 0.6) {
+      physicalFactors.push({ label: 'Hydration', impact: 'positive', note: '6+ glasses — well hydrated' });
+    } else if (waterW < 0.4) {
+      physicalFactors.push({ label: 'Hydration', impact: 'negative', note: 'Under 4 glasses — drink more water' });
+    } else {
+      physicalFactors.push({ label: 'Hydration', impact: 'neutral', note: 'Moderate hydration today' });
+    }
+  }
+
+  if (profile?.weight && profile?.height) {
+    const hm  = profile.height / 100;
+    const bmi = profile.weight / (hm * hm);
+    if (bmi >= 18.5 && bmi < 25) {
+      physicalFactors.push({ label: 'BMI', impact: 'positive', note: `BMI ${bmi.toFixed(1)} — healthy range` });
+    } else if (bmi < 18.5) {
+      physicalFactors.push({ label: 'BMI', impact: 'negative', note: `BMI ${bmi.toFixed(1)} — underweight` });
+    } else if (bmi < 30) {
+      physicalFactors.push({ label: 'BMI', impact: 'negative', note: `BMI ${bmi.toFixed(1)} — overweight` });
+    } else {
+      physicalFactors.push({ label: 'BMI', impact: 'negative', note: `BMI ${bmi.toFixed(1)} — obese range` });
+    }
+  }
+
+  // ── Mental factors ──
+  const mentalFactors = [];
+
+  const moodW = nw['mood'];
+  if (moodW !== undefined) {
+    if (moodW >= 0.75) {
+      mentalFactors.push({ label: 'Mood', impact: 'positive', note: 'Positive mood reported today' });
+    } else if (moodW <= 0.25) {
+      mentalFactors.push({ label: 'Mood', impact: 'negative', note: 'Low mood — this weighs on mental score' });
+    } else {
+      mentalFactors.push({ label: 'Mood', impact: 'neutral', note: 'Moderate mood today' });
+    }
+  }
+
+  const stressW = nw['stress'];
+  if (stressW !== undefined) {
+    if (stressW <= 0.25) {
+      mentalFactors.push({ label: 'Stress', impact: 'positive', note: 'Low stress — good for mental clarity' });
+    } else if (stressW >= 0.75) {
+      mentalFactors.push({ label: 'Stress', impact: 'negative', note: 'High stress reported today' });
+    } else {
+      mentalFactors.push({ label: 'Stress', impact: 'neutral', note: 'Moderate stress level' });
+    }
+  }
+
+  const sleepQW = nw['sleep_quality'];
+  if (sleepQW !== undefined) {
+    if (sleepQW >= 0.75) {
+      mentalFactors.push({ label: 'Sleep Quality', impact: 'positive', note: 'Good quality sleep — supports mental health' });
+    } else if (sleepQW < 0.5) {
+      mentalFactors.push({ label: 'Sleep Quality', impact: 'negative', note: 'Poor sleep quality affects mood and focus' });
+    } else {
+      mentalFactors.push({ label: 'Sleep Quality', impact: 'neutral', note: 'Average sleep quality' });
+    }
+  }
+
+  if (shr === 'medium' || shr === 'high') {
+    mentalFactors.push({ label: 'Emotional Safety', impact: 'negative', note: 'Some concerning signals detected — please reach out for support' });
+  }
+
+  // ── Overall summary ──
+  const allFactors = [...physicalFactors, ...mentalFactors];
+  const positives  = allFactors.filter((f) => f.impact === 'positive');
+  const negatives  = allFactors.filter((f) => f.impact === 'negative');
+  let overallSummary;
+  if (positives.length > 0 && negatives.length > 0) {
+    overallSummary = `Your biggest boost today is ${positives[0].label.toLowerCase()}, while ${negatives[0].label.toLowerCase()} is pulling your score down.`;
+  } else if (positives.length > 0) {
+    overallSummary = `Great work — ${positives[0].label.toLowerCase()} is contributing positively to your overall health score.`;
+  } else if (negatives.length > 0) {
+    overallSummary = `${negatives[0].label} seems to be your biggest hurdle today. Small improvements here will move your score the most.`;
+  } else {
+    overallSummary = 'Your scores reflect everything you shared in your check-in. Keep tracking for better insights over time.';
+  }
+
+  return {
+    overall:  { score: scores.overall,  color: scoreColor(scores.overall),  summary: overallSummary, factors: [] },
+    physical: { score: scores.physical, color: scoreColor(scores.physical), factors: physicalFactors },
+    mental:   { score: scores.mental,   color: scoreColor(scores.mental),   factors: mentalFactors  },
+  };
+}
 
 const getWittyStatus = (score) => {
   const statuses = {
@@ -789,6 +1451,142 @@ const makeStyles = (c) => StyleSheet.create({
   pillDot:  { width: 7, height: 7, borderRadius: 4 },
   pillText: { ...Typography.caption, fontWeight: '600' },
   sectionTitle:      { ...Typography.h4, color: c.textPrimary, marginTop: Spacing.xs },
+  scoreTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  // ── Score Info Modal ────────────────────────────────────────────────────
+  infoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  infoModalCard: {
+    borderRadius: 20,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    width: '100%',
+    maxHeight: '88%',
+  },
+  infoModalHeader: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
+  },
+  infoModalIntro: { ...Typography.body, textAlign: 'center', marginBottom: Spacing.xs },
+  infoRangePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.md,
+    marginBottom: 6,
+  },
+  infoRangeDot:   { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  infoRangeLabel: { ...Typography.label, fontWeight: '700', minWidth: 48 },
+  infoRangeText:  { ...Typography.bodySmall, flex: 1 },
+  infoSubHeader:  { ...Typography.h4, marginTop: Spacing.sm, marginBottom: Spacing.xs },
+  infoFactorRow:  { ...Typography.body, paddingVertical: 3 },
+  infoFooterNote: {
+    ...Typography.caption,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  infoCloseBtn: {
+    borderRadius: Radius.full,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.xs,
+  },
+  infoCloseBtnText: { ...Typography.button },
+
+  // Personalized score sections
+  infoScoreSection:  { gap: Spacing.xs, paddingVertical: Spacing.xs },
+  infoScoreHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 2 },
+  infoScoreNumber:   { fontSize: 36, fontWeight: '800', letterSpacing: -1 },
+  infoScoreTitle:    { ...Typography.h3 },
+  infoSummaryText:   { ...Typography.body, fontStyle: 'italic' },
+  infoSectionDivider: { height: 1, marginVertical: Spacing.sm },
+  infoPersonFactorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    paddingVertical: 3,
+  },
+  infoPersonDot:   { width: 8, height: 8, borderRadius: 4, marginTop: 5, flexShrink: 0 },
+  infoPersonLabel: { ...Typography.bodySmall, fontWeight: '600', width: 110, flexShrink: 0 },
+  infoPersonNote:  { ...Typography.bodySmall, flex: 1 },
+
+  // Formula collapsible
+  formulaToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  formulaToggleText: { fontSize: 12, fontWeight: '500' },
+  formulaBox: {
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 6,
+    gap: 5,
+  },
+  formulaRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  formulaDivider:    { height: 1, marginVertical: 3 },
+  formulaLabel: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    flex: 1,
+  },
+  formulaValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    textAlign: 'right',
+  },
+  formulaTotalLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    flex: 1,
+  },
+  formulaTotalValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    textAlign: 'right',
+  },
+
+  // Breakdown rows (BreakdownToggle)
+  bdRowWrap:      { gap: 2, paddingVertical: 4 },
+  bdRowTop:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bdEmoji:        { fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 },
+  bdLabel:        { ...Typography.bodySmall, flex: 1, fontWeight: '500' },
+  bdPts:          { ...Typography.bodySmall, fontWeight: '700', textAlign: 'right' },
+  bdNote:         { ...Typography.caption, fontStyle: 'italic', marginLeft: 26 },
+  bdRowDivider:   { height: StyleSheet.hairlineWidth, marginTop: 4 },
+  bdTotalDivider: { height: 1, marginVertical: 6 },
+  bdTotalRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  bdTotalLabel:   { ...Typography.bodySmall, fontWeight: '600' },
+  bdTotalValue:   { ...Typography.bodySmall, fontWeight: '800' },
+  overallEquationText: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
   scoreRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -814,7 +1612,6 @@ const makeStyles = (c) => StyleSheet.create({
   patternName:  { ...Typography.bodySmall, color: c.textPrimary, flex: 1 },
   seeMoreBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: Spacing.xs },
   seeMoreText:  { ...Typography.label, color: c.primaryContrast },
-  quickLinks:   { gap: Spacing.sm, marginTop: Spacing.xs },
   checkInBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -922,17 +1719,34 @@ const makeStyles = (c) => StyleSheet.create({
   memberAvatarWrap: {
     position: 'relative',
     flexShrink: 0,
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
+    marginRight: 16,
+  },
+  memberAvatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
   },
   memberAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.full,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   memberAvatarLetter: { ...Typography.h4, lineHeight: 20 },
+  presenceDot: {
+    position:     'absolute',
+    top:          0,
+    right:        -2,
+    width:        12,
+    height:       12,
+    borderRadius: 6,
+    borderWidth:  2,
+    borderColor:  c.surface,
+  },
   scorePill: {
     position: 'absolute',
     bottom: -4,
@@ -942,7 +1756,7 @@ const makeStyles = (c) => StyleSheet.create({
     borderRadius: 999,
   },
   scorePillText: { ...Typography.caption, fontWeight: '700', fontSize: 10 },
-  memberInfo:    { flex: 1, gap: 1 },
+  memberInfo:    { flex: 1, gap: 1, marginLeft: 4 },
   memberName:    { ...Typography.body, fontWeight: '600' },
   youTag:        { ...Typography.caption, fontWeight: '500' },
   memberStatusWrap: {
@@ -1000,6 +1814,76 @@ const makeStyles = (c) => StyleSheet.create({
     fontStyle: 'italic',
     paddingVertical: Spacing.sm,
   },
+
+  // ── No Circle Modal ──────────────────────────────────────────────────────
+  modalOverlay:  { flex: 1, justifyContent: 'flex-end' },
+  modalSheet: {
+    borderTopLeftRadius:  24,
+    borderTopRightRadius: 24,
+    padding:              24,
+    paddingBottom:        Spacing.xxl,
+    gap:                  Spacing.md,
+    alignItems:           'center',
+  },
+  modalHandle: {
+    width:        40,
+    height:       4,
+    borderRadius: 2,
+    alignSelf:    'center',
+    marginBottom: Spacing.xs,
+  },
+  modalCloseBtn: {
+    position:       'absolute',
+    top:            16,
+    right:          16,
+    width:          MIN_TOUCH,
+    height:         MIN_TOUCH,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+  modalIconWrap: {
+    width:          72,
+    height:         72,
+    borderRadius:   Radius.full,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+  modalTitle:    { ...Typography.h2, textAlign: 'center' },
+  modalBody:     { ...Typography.body, textAlign: 'center' },
+  modalPrimaryBtn: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'center',
+    gap:              Spacing.xs,
+    borderRadius:     Radius.md,
+    paddingVertical:  Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    minHeight:        MIN_TOUCH,
+    width:            '100%',
+  },
+  modalOutlinedBtn: {
+    alignItems:       'center',
+    justifyContent:   'center',
+    borderWidth:      1,
+    borderRadius:     Radius.md,
+    paddingVertical:  Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    minHeight:        MIN_TOUCH,
+    width:            '100%',
+  },
+  modalBtnText:  { ...Typography.body, fontWeight: '600' },
+  modalInput: {
+    borderWidth:       1,
+    borderRadius:      Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical:   Spacing.md,
+    ...Typography.body,
+    minHeight:         MIN_TOUCH,
+    width:             '100%',
+    textAlign:         'center',
+    letterSpacing:     2,
+  },
+  modalErrorText: { ...Typography.bodySmall },
 });
 
 const scStyles = StyleSheet.create({
@@ -1020,16 +1904,3 @@ const rbStyles = StyleSheet.create({
   sub:   { ...Typography.bodySmall, flex: 1 },
 });
 
-const qlStyles = StyleSheet.create({
-  btn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    minHeight: MIN_TOUCH,
-    borderWidth: 1,
-  },
-  iconWrap: { width: 40, height: 40, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
-  label:    { ...Typography.body, flex: 1 },
-});

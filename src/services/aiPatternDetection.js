@@ -16,66 +16,184 @@ import { RISK_LEVELS, SCORE_THRESHOLDS } from '../utils/constants';
  * Returns null if data is missing or invalid.
  */
 const calcBMI = (userProfile) => {
-  const { weight, height } = userProfile || {};
+  const { weight, height, weightUnit, heightUnit } = userProfile || {};
   if (!weight || !height || height <= 0) return null;
-  return weight / Math.pow(height / 100, 2);
+  const weightKg = weightUnit === 'lbs' ? weight * 0.453592 : weight;
+  const heightM  = heightUnit === 'in'  ? height * 0.0254   : height / 100;
+  if (heightM <= 0) return null;
+  return Math.round((weightKg / (heightM * heightM)) * 10) / 10;
 };
 
 /**
  * Calculate Physical Health Score (0–100) from node weights.
  * Optionally applies a BMI-based penalty when userProfile is provided.
+ * Returns { score, breakdown } where breakdown is an array of per-factor objects.
  */
 const calcPhysicalScore = (w, userProfile) => {
-  const sleepHoursScore  = w[NODE_TYPES.SLEEP_HOURS]  * 100;
-  const sleepQualScore   = w[NODE_TYPES.SLEEP_QUALITY] * 100;
-  const exerciseScore    = w[NODE_TYPES.EXERCISE]      * 100;
-  const waterScore       = w[NODE_TYPES.WATER]         * 100;
-  const symptomPenalty   = w[NODE_TYPES.SYMPTOMS]      * 40; // symptoms reduce score
-  const caffeinepenalty  = w[NODE_TYPES.CAFFEINE]      * 20;
-  const alcoholPenalty   = w[NODE_TYPES.ALCOHOL]       * 25;
+  const sleepHoursScore = w[NODE_TYPES.SLEEP_HOURS]   * 100;
+  const sleepQualScore  = w[NODE_TYPES.SLEEP_QUALITY]  * 100;
+  const exerciseScore   = w[NODE_TYPES.EXERCISE]        * 100;
+  const waterScore      = w[NODE_TYPES.WATER]           * 100;
+  const symptomPenalty  = w[NODE_TYPES.SYMPTOMS]        * 40;
+  const caffeinepenalty = w[NODE_TYPES.CAFFEINE]        * 20;
+  const alcoholPenalty  = w[NODE_TYPES.ALCOHOL]         * 25;
 
   const raw =
-    sleepHoursScore  * 0.25 +
-    sleepQualScore   * 0.20 +
-    exerciseScore    * 0.20 +
-    waterScore       * 0.15 +
-    (100 - symptomPenalty) * 0.20 -
-    caffeinepenalty  * 0.10 -
-    alcoholPenalty   * 0.10;
+    sleepHoursScore          * 0.25 +
+    sleepQualScore           * 0.20 +
+    exerciseScore            * 0.20 +
+    waterScore               * 0.15 +
+    (100 - symptomPenalty)   * 0.20 -
+    caffeinepenalty          * 0.10 -
+    alcoholPenalty           * 0.10;
 
-  // BMI-based penalty: outside healthy range (18.5–24.9) reduces physical score
   let bmiPenalty = 0;
   const bmi = calcBMI(userProfile);
   if (bmi !== null) {
-    if (bmi >= 30)       bmiPenalty = 10; // obese
-    else if (bmi >= 27)  bmiPenalty = 5;  // overweight
-    else if (bmi < 18.5) bmiPenalty = 5;  // underweight
+    if (bmi >= 30)       bmiPenalty = 10;
+    else if (bmi >= 27)  bmiPenalty = 5;
+    else if (bmi < 18.5) bmiPenalty = 5;
   }
 
-  return Math.round(Math.max(0, Math.min(100, raw - bmiPenalty)));
+  const score = Math.round(Math.max(0, Math.min(100, raw - bmiPenalty)));
+
+  const breakdown = [
+    {
+      label:  'Sleep Duration',
+      emoji:  '🛌',
+      earned: Math.round(sleepHoursScore * 0.25),
+      max:    25,
+      note:   sleepHoursScore >= 62.5 ? '7+ hours — great for recovery'
+              : sleepHoursScore < 50  ? 'Less than 6 hours of sleep'
+              :                         'Around 6–7 hours',
+    },
+    {
+      label:  'Sleep Quality',
+      emoji:  '💤',
+      earned: Math.round(sleepQualScore * 0.20),
+      max:    20,
+      note:   sleepQualScore >= 75 ? 'Good quality sleep'
+              : sleepQualScore < 50 ? 'Poor sleep quality'
+              :                       'Average sleep quality',
+    },
+    {
+      label:  'Exercise',
+      emoji:  '🏃',
+      earned: Math.round(exerciseScore * 0.20),
+      max:    20,
+      note:   exerciseScore > 0 ? 'Active today' : 'No activity logged',
+    },
+    {
+      label:  'Hydration',
+      emoji:  '💧',
+      earned: Math.round(waterScore * 0.15),
+      max:    15,
+      note:   waterScore >= 60 ? '6+ glasses logged'
+              : waterScore < 40 ? 'Under 4 glasses today'
+              :                   'Moderate water intake',
+    },
+    {
+      label:  'Physical Health',
+      emoji:  '🫀',
+      earned: Math.round((100 - symptomPenalty) * 0.20),
+      max:    20,
+      note:   symptomPenalty < 20  ? 'Few or no symptoms today'
+              : symptomPenalty > 60 ? 'Several symptoms reported'
+              :                       'Some symptoms present',
+    },
+    ...(bmi !== null ? [{
+      label:  'BMI',
+      emoji:  '⚖️',
+      earned: -bmiPenalty,
+      max:    0,
+      note:   bmi >= 30    ? `BMI ${bmi.toFixed(1)} — obese range`
+              : bmi >= 27  ? `BMI ${bmi.toFixed(1)} — overweight`
+              : bmi < 18.5 ? `BMI ${bmi.toFixed(1)} — underweight`
+              :               `BMI ${bmi.toFixed(1)} — healthy range`,
+    }] : []),
+  ];
+
+  return { score, breakdown };
 };
 
 /**
  * Calculate Mental Health Score (0–100) from node weights.
  * Note: higher stress/anxiety = worse, so we invert them.
+ * Returns { score, breakdown } where breakdown is an array of per-factor objects.
  */
 const calcMentalScore = (w) => {
-  const moodScore        = w[NODE_TYPES.MOOD]         * 100;
-  const stressPenalty    = w[NODE_TYPES.STRESS]       * 100;
-  const anxietyPenalty   = w[NODE_TYPES.ANXIETY]      * 100;
-  const lonelinessPenalty= w[NODE_TYPES.LONELINESS]   * 60;
-  const motivationScore  = w[NODE_TYPES.MOTIVATION]   * 100;
-  const sleepBonus       = w[NODE_TYPES.SLEEP_QUALITY] * 30;
+  const moodScore         = w[NODE_TYPES.MOOD]          * 100;
+  const stressPenalty     = w[NODE_TYPES.STRESS]        * 100;
+  const anxietyPenalty    = w[NODE_TYPES.ANXIETY]       * 100;
+  const lonelinessPenalty = w[NODE_TYPES.LONELINESS]    * 60;
+  const motivationScore   = w[NODE_TYPES.MOTIVATION]    * 100;
+  const sleepBonus        = w[NODE_TYPES.SLEEP_QUALITY] * 30;
+
+  const moodEarned       = Math.round(moodScore * 0.30);
+  const stressEarned     = Math.round((100 - stressPenalty) * 0.25);
+  const anxietyEarned    = Math.round((100 - anxietyPenalty) * 0.20);
+  const motivationEarned = Math.round(motivationScore * 0.15);
+  const socialEarned     = Math.round((100 - lonelinessPenalty) * 0.10);
 
   const raw =
-    moodScore         * 0.30 +
-    (100 - stressPenalty)     * 0.25 +
-    (100 - anxietyPenalty)    * 0.20 +
-    motivationScore   * 0.15 +
+    moodScore              * 0.30 +
+    (100 - stressPenalty)  * 0.25 +
+    (100 - anxietyPenalty) * 0.20 +
+    motivationScore        * 0.15 +
     (100 - lonelinessPenalty) * 0.10 +
-    sleepBonus        * 0.05;
+    sleepBonus             * 0.05;
 
-  return Math.round(Math.max(0, Math.min(100, raw)));
+  const score = Math.round(Math.max(0, Math.min(100, raw)));
+
+  const breakdown = [
+    {
+      label:  'Mood',
+      emoji:  '😊',
+      earned: moodEarned,
+      max:    30,
+      note:   moodScore >= 75 ? 'Positive mood today'
+              : moodScore < 50 ? 'Low mood recorded'
+              :                  'Neutral mood today',
+    },
+    {
+      label:  'Stress Level',
+      emoji:  '😤',
+      earned: stressEarned,
+      max:    25,
+      note:   stressPenalty < 30 ? 'Low stress — well managed'
+              : stressPenalty > 60 ? 'High stress today'
+              :                      'Moderate stress level',
+    },
+    {
+      label:  'Anxiety',
+      emoji:  '😰',
+      earned: anxietyEarned,
+      max:    20,
+      note:   anxietyPenalty < 30 ? 'Anxiety well under control'
+              : anxietyPenalty > 60 ? 'High anxiety reported'
+              :                       'Mild to moderate anxiety',
+    },
+    {
+      label:  'Motivation',
+      emoji:  '🎯',
+      earned: motivationEarned,
+      max:    15,
+      note:   motivationScore >= 75 ? 'Feeling motivated today'
+              : motivationScore < 40 ? 'Low motivation logged'
+              :                        'Moderate motivation',
+    },
+    {
+      label:  'Social Connection',
+      emoji:  '👥',
+      earned: socialEarned,
+      max:    10,
+      note:   lonelinessPenalty < 20 ? 'Feeling connected today'
+              : lonelinessPenalty > 50 ? 'Feeling isolated today'
+              :                          'Some feelings of loneliness',
+    },
+  ];
+
+  return { score, breakdown };
 };
 
 /**
@@ -103,16 +221,26 @@ const calcDietScore = (w) => {
  * Optionally accepts userProfile for BMI-aware physical score.
  */
 export const calculateScores = (nodeWeights, userProfile) => {
-  const physicalScore = calcPhysicalScore(nodeWeights, userProfile);
-  const mentalScore   = calcMentalScore(nodeWeights);
-  const dietScore     = calcDietScore(nodeWeights);
+  const physical    = calcPhysicalScore(nodeWeights, userProfile);
+  const mental      = calcMentalScore(nodeWeights);
+  const dietScore   = calcDietScore(nodeWeights);
+
+  const physicalScore = physical.score;
+  const mentalScore   = mental.score;
   const overallScore  = Math.round(
     physicalScore * 0.40 +
     mentalScore   * 0.40 +
     dietScore     * 0.20
   );
 
-  return { overallScore, physicalScore, mentalScore, dietScore };
+  return {
+    overallScore,
+    physicalScore,
+    mentalScore,
+    dietScore,
+    physicalBreakdown: physical.breakdown,
+    mentalBreakdown:   mental.breakdown,
+  };
 };
 
 // ────────────────────────────────────────────────────────────
@@ -401,6 +529,32 @@ const detectBMIPattern = (userProfile) => {
     };
   }
   return null;
+};
+
+// ────────────────────────────────────────────────────────────
+// SECTION 2b: EMOTIONAL RISK DETECTION
+// ────────────────────────────────────────────────────────────
+
+const PULSE_SCORE_MAP = { Never: 0, Sometimes: 1, Often: 2, Always: 3 };
+
+/**
+ * Score Emotional Pulse responses and return a risk level.
+ * reasonsToKeepGoing is reverse-scored (Always = 0, Never = 3).
+ * Total 0 → "none", 1–3 → "low", 4–7 → "medium", 8–12 → "high".
+ */
+export const detectSelfHarmRisk = (everythingStop, betterWithout, feelEmpty, reasonsToKeepGoing) => {
+  const s1 = PULSE_SCORE_MAP[everythingStop]           ?? 0;
+  const s2 = PULSE_SCORE_MAP[betterWithout]            ?? 0;
+  const s3 = PULSE_SCORE_MAP[feelEmpty]                ?? 0;
+  const s4 = 3 - (PULSE_SCORE_MAP[reasonsToKeepGoing] ?? 0);
+  const score = s1 + s2 + s3 + s4;
+
+  const level = score === 0 ? 'none' : score <= 3 ? 'low' : score <= 7 ? 'medium' : 'high';
+  console.log(
+    `[detectSelfHarmRisk] inputs: { everythingStop: "${everythingStop}", betterWithout: "${betterWithout}", feelEmpty: "${feelEmpty}", reasonsToKeepGoing: "${reasonsToKeepGoing}" }` +
+    ` | scores: [${s1}, ${s2}, ${s3}, ${s4}] | total: ${score} | level: "${level}"`
+  );
+  return level;
 };
 
 // ────────────────────────────────────────────────────────────
@@ -745,6 +899,22 @@ export const generateRiskFactors = (nodeWeights) => {
 // SECTION 7: MAIN ANALYSIS ENTRY POINT
 // ────────────────────────────────────────────────────────────
 
+const OPEN_ENDED_LABELS = {
+  onMind:       "What's been on your mind",
+  struggling:   'Something specific they\'ve been struggling with',
+  goodToday:    'Something that made them smile or feel good today',
+  draining:     'What\'s been draining their energy',
+  anythingElse: 'Anything else',
+};
+
+const buildOpenEndedContext = (responses) => {
+  if (!responses || typeof responses !== 'object') return '';
+  const lines = Object.entries(responses)
+    .filter(([, v]) => typeof v === 'string' && v.trim().length > 0)
+    .map(([k, v]) => `${OPEN_ENDED_LABELS[k] || k}: ${v.trim()}`);
+  return lines.join('\n');
+};
+
 /**
  * Full analysis pipeline: checkIn data → complete insight report.
  * @param {object} checkIn - Raw check-in data from the user
@@ -753,7 +923,8 @@ export const generateRiskFactors = (nodeWeights) => {
  * @returns {object} Complete analysis result
  */
 export const analyzeHealthData = (checkIn, graph, userProfile = null) => {
-  const nodeWeights = graph.nodeWeights;
+  const nodeWeights      = graph.nodeWeights;
+  const openEndedContext = buildOpenEndedContext(checkIn.openEndedResponses);
 
   const scores           = calculateScores(nodeWeights, userProfile);
   const basePatterns     = detectPatterns(nodeWeights);
@@ -767,6 +938,12 @@ export const analyzeHealthData = (checkIn, graph, userProfile = null) => {
   const riskLevel        = classifyRisk(scores.overallScore, patterns);
   const suggestions      = generateSuggestions(patterns, nodeWeights, userProfile);
   const alerts           = generateAlerts(patterns, scores);
+  const selfHarmRisk     = detectSelfHarmRisk(
+    checkIn.everythingStop,
+    checkIn.betterWithout,
+    checkIn.feelEmpty,
+    checkIn.reasonsToKeepGoing,
+  );
 
   return {
     ...scores,
@@ -781,6 +958,8 @@ export const analyzeHealthData = (checkIn, graph, userProfile = null) => {
     })),
     suggestions,
     alerts,
+    selfHarmRisk,
+    openEndedContext,
     // Persist nodeWeights so InsightsScreen can render the factor breakdown
     // without needing to re-fetch the raw health log.
     nodeWeights,

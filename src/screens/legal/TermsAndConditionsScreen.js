@@ -17,13 +17,13 @@ const SUMMARY_POINTS = [
   'Your data is kept private and is never sold or shared with anyone.',
   'The AI health scores and tips are not medical advice — always see a real doctor for health concerns.',
   'You can delete your account and all your data at any time from the Profile screen.',
-  'Vitalyze is completely free to use.',
+  'Mend is completely free to use.',
 ];
 
 const SECTIONS = [
   {
-    title: 'What is Vitalyze?',
-    body: `Vitalyze is a free app that helps you keep track of how you are feeling every day. You do a quick check-in and the app shows you a health score along with simple tips to feel better. It was built as a school project to help people learn more about their own wellbeing.`,
+    title: 'What is Mend?',
+    body: `Mend is a free app that helps you keep track of how you are feeling every day. You do a quick check-in and the app shows you a health score along with simple tips to feel better. It was built as a school project to help people learn more about their own wellbeing.`,
   },
   {
     title: 'What information do we collect?',
@@ -39,7 +39,7 @@ const SECTIONS = [
   },
   {
     title: 'About the AI health insights',
-    body: `The health scores and tips in Vitalyze are made by a computer program (an algorithm). They are based only on what you tell the app each day.\n\nThey are NOT medical advice. Please do not use them to treat, diagnose, or manage any illness. If you are worried about your health, talk to a real doctor. In an emergency, call your local emergency number right away — do not rely on this app.`,
+    body: `The health scores and tips in Mend are made by a computer program (an algorithm). They are based only on what you tell the app each day.\n\nThey are NOT medical advice. Please do not use them to treat, diagnose, or manage any illness. If you are worried about your health, talk to a real doctor. In an emergency, call your local emergency number right away — do not rely on this app.`,
   },
   {
     title: 'Your rights',
@@ -97,7 +97,7 @@ export default function TermsAndConditionsScreen({ navigation }) {
         <View style={[styles.introBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primary + '30' }]}>
           <Ionicons name="shield-checkmark-outline" size={20} color={colors.primaryContrast} />
           <Text style={[styles.introText, { color: colors.primaryContrast }]} maxFontSizeMultiplier={1.5}>
-            These terms explain how Vitalyze works and what you are agreeing to.
+            These terms explain how Mend works and what you are agreeing to.
           </Text>
         </View>
 

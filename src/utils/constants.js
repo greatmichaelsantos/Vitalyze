@@ -2,8 +2,8 @@
 // APP-WIDE CONSTANTS
 // ============================================================
 
-export const APP_NAME = 'Vitalyze';
-export const APP_TAGLINE = 'AI-driven health monitoring';
+export const APP_NAME = 'Mend';
+export const APP_TAGLINE = 'Heal from within';
 
 // Typography scale — hardcoded pixel values so layout is identical
 // on every platform (iOS, Android, Expo web, tablets).

@@ -9,10 +9,9 @@ import {
   EmailAuthProvider,
   deleteUser,
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../firebase';
-import { COLLECTIONS, STORAGE_KEYS } from '../utils/constants';
+import { STORAGE_KEYS } from '../utils/constants';
 
 /**
  * Register a new user with email and password.
@@ -20,15 +19,7 @@ import { COLLECTIONS, STORAGE_KEYS } from '../utils/constants';
  */
 export const register = async (email, password) => {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const user = credential.user;
-
-  await setDoc(doc(db, COLLECTIONS.USERS, user.uid), {
-    userId: user.uid,
-    email: user.email,
-    createdAt: serverTimestamp(),
-  });
-
-  return user;
+  return credential.user;
 };
 
 /**

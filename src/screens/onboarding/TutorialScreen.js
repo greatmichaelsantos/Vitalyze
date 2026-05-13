@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, PanResponder,
-  Animated, StatusBar, SafeAreaView, ActivityIndicator,
+  Animated, StatusBar, SafeAreaView, ActivityIndicator, Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
@@ -13,7 +13,7 @@ const SLIDES = [
   {
     id: '1',
     icon: '👋',
-    title: 'Welcome to Vitalyze',
+    title: 'Welcome to Mend',
     body: "Your personal AI health companion. We'll help you track your daily wellness and detect patterns that matter.",
   },
   {
@@ -38,7 +38,7 @@ const SLIDES = [
     id: '5',
     icon: '💡',
     title: 'Get personalised suggestions',
-    body: 'Vitalyze detects patterns and gives you actionable suggestions tailored to your data — not generic advice.',
+    body: 'Mend detects patterns and gives you actionable suggestions tailored to your data — not generic advice.',
   },
 ];
 
@@ -53,7 +53,7 @@ export default function TutorialScreen({ navigation }) {
   const [finishing,    setFinishing]    = useState(false);
 
   const isLast = currentIndex === SLIDES.length - 1;
-  const slide  = SLIDES[currentIndex];
+  const slide  = SLIDES[currentIndex] ?? SLIDES[0];
 
   const markSeen = async () => {
     if (user?.uid) {
@@ -78,7 +78,7 @@ export default function TutorialScreen({ navigation }) {
     if (finishing) return;
     setFinishing(true);
     await markSeen();
-    navigation.replace('ProfileSetup');
+    navigation.reset({ index: 0, routes: [{ name: 'ProfileSetup' }] });
   };
 
   // PanResponder for swipe left/right
@@ -134,9 +134,13 @@ export default function TutorialScreen({ navigation }) {
       </View>
 
       {/* Slide content — index-based, no FlatList */}
+      {/* On web, PanResponder blocks pointer events across the whole node;   */}
+      {/* use pointerEvents="box-none" so the View itself never consumes      */}
+      {/* clicks while children (text) remain interactive.                   */}
       <View
         style={styles.slideArea}
-        {...(reduceMotion ? {} : panResponder.panHandlers)}
+        {...(reduceMotion || Platform.OS === 'web' ? {} : panResponder.panHandlers)}
+        pointerEvents={Platform.OS === 'web' ? 'box-none' : 'auto'}
         accessible={false}
       >
         <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
@@ -166,7 +170,7 @@ export default function TutorialScreen({ navigation }) {
           onPress={handleNext}
           disabled={finishing}
           accessibilityRole="button"
-          accessibilityLabel={isLast ? 'Get started with Vitalyze' : `Next, step ${currentIndex + 2} of ${SLIDES.length}`}
+          accessibilityLabel={isLast ? 'Get started with Mend' : `Next, step ${currentIndex + 2} of ${SLIDES.length}`}
           accessibilityState={{ disabled: finishing, busy: finishing }}
         >
           {finishing
