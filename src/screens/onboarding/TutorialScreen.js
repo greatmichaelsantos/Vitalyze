@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, PanResponder,
-  Animated, StatusBar, SafeAreaView, ActivityIndicator, Platform,
+  Animated, StatusBar, SafeAreaView, ActivityIndicator, Platform, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
@@ -74,10 +74,10 @@ export default function TutorialScreen({ navigation }) {
     }
   };
 
-  const handleFinish = async () => {
+  const handleFinish = () => {
     if (finishing) return;
     setFinishing(true);
-    await markSeen();
+    markSeen().catch(() => {});
     navigation.reset({ index: 0, routes: [{ name: 'ProfileSetup' }] });
   };
 
@@ -144,9 +144,16 @@ export default function TutorialScreen({ navigation }) {
         accessible={false}
       >
         <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
-          <Text style={styles.slideEmoji} accessibilityElementsHidden={true}>
-            {slide.icon}
-          </Text>
+          {currentIndex === 0
+            ? <Image
+                source={require('../../assets/icon.png')}
+                style={{ width: 80, height: 80, borderRadius: 20 }}
+                accessibilityElementsHidden={true}
+              />
+            : <Text style={styles.slideEmoji} accessibilityElementsHidden={true}>
+                {slide.icon}
+              </Text>
+          }
         </View>
         <Text
           style={[styles.slideTitle, { color: colors.textPrimary }]}
