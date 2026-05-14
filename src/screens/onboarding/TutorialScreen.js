@@ -44,7 +44,7 @@ const SLIDES = [
 
 const SWIPE_THRESHOLD = 50;
 
-export default function TutorialScreen({ navigation }) {
+export default function TutorialScreen({ navigation, route }) {
   const { user }           = useAuth();
   const { colors, isDark } = useTheme();
   const reduceMotion       = useReduceMotion();
@@ -75,7 +75,7 @@ export default function TutorialScreen({ navigation }) {
 
   const handleFinish = () => {
     markSeen().catch(() => {});
-    navigation.reset({ index: 0, routes: [{ name: 'ProfileSetup' }] });
+    route.params?.onComplete?.();
   };
 
   // PanResponder for swipe left/right

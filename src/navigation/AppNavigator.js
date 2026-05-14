@@ -199,7 +199,11 @@ export default function AppNavigator() {
         ) : (
           <>
             {!tutorialSeen && (
-              <Stack.Screen name="Tutorial"     component={TutorialScreen} />
+              <Stack.Screen
+                name="Tutorial"
+                component={TutorialScreen}
+                initialParams={{ onComplete: () => setTutorialSeen(true) }}
+              />
             )}
             {!profileSetupComplete && (
               <Stack.Screen name="ProfileSetup"   component={ProfileSetupScreen} />
