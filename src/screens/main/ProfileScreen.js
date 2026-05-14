@@ -45,8 +45,8 @@ const FONT_SIZE_OPTIONS = [
 export default function ProfileScreen({ navigation }) {
   const { user, refreshUser }           = useAuth();
   const { colors, isDark, toggleTheme, cardBorderWidth } = useTheme();
-  const { fontSizeKey, highContrast, setFontSize, setHighContrast } = useAccessibility();
-  const styles = useMemo(() => makeStyles(colors, cardBorderWidth), [colors, cardBorderWidth]);
+  const { fontSizeKey, fontSizeMultiplier, highContrast, setFontSize, setHighContrast } = useAccessibility();
+  const styles = useMemo(() => makeStyles(colors, cardBorderWidth, fontSizeMultiplier), [colors, cardBorderWidth, fontSizeMultiplier]);
 
   const [profile,         setProfile]         = useState(null);
   const [prefs,           setPrefs]           = useState(null);
@@ -478,6 +478,16 @@ export default function ProfileScreen({ navigation }) {
         {/* ── Accessibility ────────────────────────────────────── */}
         <SectionHeader title="Accessibility" colors={colors} />
         <View style={styles.section}>
+          <ToggleRow
+            icon="moon-outline"
+            label="Dark Mode"
+            sublabel="Deep navy background with off-white text"
+            value={isDark}
+            onChange={toggleTheme}
+            accentColor={colors.primary}
+            colors={colors}
+          />
+          <View style={{ height: 1, backgroundColor: colors.border }} />
           <TouchableOpacity
             style={[styles.tappableRow, { borderTopWidth: 0 }]}
             onPress={() => setFontSizeModalOpen(true)}
@@ -553,21 +563,6 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </>
           )}
-        </View>
-
-        {/* ── Appearance ───────────────────────────────────────── */}
-        <SectionHeader title="Appearance" colors={colors} />
-        <View style={styles.section}>
-          <ToggleRow
-            icon="moon-outline"
-            label="Dark Mode"
-            sublabel="Deep navy background with off-white text"
-            value={isDark}
-            onChange={toggleTheme}
-            accentColor={colors.primary}
-            colors={colors}
-            isLast
-          />
         </View>
 
         {/* ── Privacy & Data ───────────────────────────────────── */}
@@ -1281,10 +1276,12 @@ function FontSizeModal({ visible, currentKey, onSelect, onClose, colors }) {
 // SHARED SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
 function SectionHeader({ title, trailing, colors }) {
+  const { fontSizeMultiplier } = useAccessibility();
+  const titleSize = Math.round(Typography.label.fontSize * fontSizeMultiplier);
   return (
     <View style={sectStyles.row}>
       <Text
-        style={[sectStyles.title, { color: colors.textSecondary }]}
+        style={[sectStyles.title, { color: colors.textSecondary, fontSize: titleSize }]}
         accessibilityRole="header"
       >
         {title}
@@ -1295,18 +1292,24 @@ function SectionHeader({ title, trailing, colors }) {
 }
 
 function InfoRow({ icon, label, value, colors }) {
+  const { fontSizeMultiplier } = useAccessibility();
+  const labelSize = Math.round(Typography.body.fontSize    * fontSizeMultiplier);
+  const valueSize = Math.round(Typography.bodySmall.fontSize * fontSizeMultiplier);
   return (
     <View style={[infoStyles.row, { borderBottomColor: colors.border }]}>
       <View style={[infoStyles.iconWrap, { backgroundColor: colors.borderLight }]}>
         <Ionicons name={icon} size={18} color={colors.textSecondary} />
       </View>
-      <Text style={[infoStyles.label, { color: colors.textPrimary }]}>{label}</Text>
-      <Text style={[infoStyles.value, { color: colors.textSecondary }]}>{value}</Text>
+      <Text style={[infoStyles.label, { color: colors.textPrimary, fontSize: labelSize }]}>{label}</Text>
+      <Text style={[infoStyles.value, { color: colors.textSecondary, fontSize: valueSize }]}>{value}</Text>
     </View>
   );
 }
 
 function ToggleRow({ icon, label, sublabel, value, onChange, accentColor, colors, isLast }) {
+  const { fontSizeMultiplier } = useAccessibility();
+  const labelSize   = Math.round(Typography.body.fontSize    * fontSizeMultiplier);
+  const sublabelSize = Math.round(Typography.caption.fontSize * fontSizeMultiplier);
   return (
     <View style={[
       toggleStyles.row,
@@ -1316,8 +1319,8 @@ function ToggleRow({ icon, label, sublabel, value, onChange, accentColor, colors
         <Ionicons name={icon} size={18} color={accentColor} importantForAccessibility="no" />
       </View>
       <View style={toggleStyles.text}>
-        <Text style={[toggleStyles.label, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3}>{label}</Text>
-        <Text style={[toggleStyles.sublabel, { color: colors.textSecondary }]} maxFontSizeMultiplier={1.5}>{sublabel}</Text>
+        <Text style={[toggleStyles.label, { color: colors.textPrimary, fontSize: labelSize }]} maxFontSizeMultiplier={1.3}>{label}</Text>
+        <Text style={[toggleStyles.sublabel, { color: colors.textSecondary, fontSize: sublabelSize }]} maxFontSizeMultiplier={1.5}>{sublabel}</Text>
       </View>
       <Switch
         value={value}
@@ -1336,86 +1339,91 @@ function ToggleRow({ icon, label, sublabel, value, onChange, accentColor, colors
 // ─────────────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────────────
-const makeStyles = (c, bw = 1) => StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: c.background },
-  content: { padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },
-  profileCard: {
-    alignItems: 'center',
-    backgroundColor: c.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  avatarWrap:    { width: 72, height: 72 },
-  avatar:        { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarLoading: { backgroundColor: c.primary + 'aa' },
-  avatarImage:        { width: 72, height: 72, borderRadius: 36 },
-  avatarImageAbsolute:{ position: 'absolute', top: 0, left: 0 },
-  avatarImageHidden:  { opacity: 0 },
-  avatarBadge: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 22, height: 22, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: c.surface,
-  },
-  avatarText:  { ...Typography.h1, color: c.textInverse },
-  nameRow:     { flexDirection: 'row', alignItems: 'center' },
-  displayName: { ...Typography.h4, color: c.textPrimary },
-  email:       { ...Typography.bodySmall, color: c.textSecondary },
-  memberSince: { ...Typography.caption, color: c.textTertiary },
-  section:     { backgroundColor: c.surface, borderRadius: Radius.lg, borderWidth: bw, borderColor: c.border, overflow: 'hidden' },
-  tappableRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    padding: Spacing.md, minHeight: MIN_TOUCH,
-    borderTopWidth: 1, borderColor: c.border,
-  },
-  rowIconWrap:  { width: 36, height: 36, borderRadius: Radius.sm, backgroundColor: c.borderLight, alignItems: 'center', justifyContent: 'center' },
-  rowLabel:     { ...Typography.body, color: c.textPrimary, flex: 1 },
-  rowValue:     { ...Typography.bodySmall, color: c.textSecondary },
-  actionRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    padding: Spacing.md, minHeight: MIN_TOUCH,
-    borderTopWidth: 1, borderColor: c.border,
-  },
-  actionIcon:   { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
-  actionLabel:  { ...Typography.body, color: c.textPrimary, flex: 1 },
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, borderRadius: Radius.full, height: 52,
-    borderWidth: 1.5, borderColor: c.error,
-    backgroundColor: c.errorLight, marginTop: Spacing.xs,
-  },
-  logoutText:  { ...Typography.button, color: c.error },
-  btnDisabled: { opacity: 0.6 },
-  deleteBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm },
-  deleteText:  { ...Typography.bodySmall, color: c.textTertiary },
-  footer:      { ...Typography.caption, color: c.textTertiary, textAlign: 'center', lineHeight: 18 },
+const makeStyles = (c, bw = 1, fsm = 1.0) => {
+  const T = fsm === 1.0 ? Typography : Object.fromEntries(
+    Object.entries(Typography).map(([k, v]) => [k, { ...v, fontSize: Math.round(v.fontSize * fsm) }])
+  );
+  return StyleSheet.create({
+    safe:    { flex: 1, backgroundColor: c.background },
+    content: { padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },
+    profileCard: {
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      borderRadius: Radius.lg,
+      padding: Spacing.xl,
+      borderWidth: 1,
+      borderColor: c.border,
+      gap: Spacing.sm,
+      marginTop: Spacing.md,
+    },
+    avatarWrap:    { width: 72, height: 72 },
+    avatar:        { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
+    avatarLoading: { backgroundColor: c.primary + 'aa' },
+    avatarImage:        { width: 72, height: 72, borderRadius: 36 },
+    avatarImageAbsolute:{ position: 'absolute', top: 0, left: 0 },
+    avatarImageHidden:  { opacity: 0 },
+    avatarBadge: {
+      position: 'absolute', bottom: 0, right: 0,
+      width: 22, height: 22, borderRadius: 11,
+      alignItems: 'center', justifyContent: 'center',
+      borderWidth: 2, borderColor: c.surface,
+    },
+    avatarText:  { ...T.h1, color: c.textInverse },
+    nameRow:     { flexDirection: 'row', alignItems: 'center' },
+    displayName: { ...T.h4, color: c.textPrimary },
+    email:       { ...T.bodySmall, color: c.textSecondary },
+    memberSince: { ...T.caption, color: c.textTertiary },
+    section:     { backgroundColor: c.surface, borderRadius: Radius.lg, borderWidth: bw, borderColor: c.border, overflow: 'hidden' },
+    tappableRow: {
+      flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+      padding: Spacing.md, minHeight: MIN_TOUCH,
+      borderTopWidth: 1, borderColor: c.border,
+    },
+    rowIconWrap:  { width: 36, height: 36, borderRadius: Radius.sm, backgroundColor: c.borderLight, alignItems: 'center', justifyContent: 'center' },
+    rowLabel:     { ...T.body, color: c.textPrimary, flex: 1 },
+    rowValue:     { ...T.bodySmall, color: c.textSecondary },
+    actionRow: {
+      flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+      padding: Spacing.md, minHeight: MIN_TOUCH,
+      borderTopWidth: 1, borderColor: c.border,
+    },
+    actionIcon:   { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+    actionLabel:  { ...T.body, color: c.textPrimary, flex: 1 },
+    logoutBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      gap: Spacing.sm, borderRadius: Radius.full, height: 52,
+      borderWidth: 1.5, borderColor: c.error,
+      backgroundColor: c.errorLight, marginTop: Spacing.xs,
+    },
+    logoutText:  { ...T.button, color: c.error },
+    btnDisabled: { opacity: 0.6 },
+    deleteBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm },
+    deleteText:  { ...T.bodySmall, color: c.textTertiary },
+    footer:      { ...T.caption, color: c.textTertiary, textAlign: 'center', lineHeight: 18 },
 
-  // Presence status card
-  presenceCard: {
-    backgroundColor: c.surface,
-    borderRadius:    Radius.lg,
-    padding:         Spacing.md,
-    borderWidth:     1,
-    borderColor:     c.border,
-    gap:             Spacing.sm,
-  },
-  presenceLabel:   { ...Typography.label, color: c.textSecondary },
-  presencePillRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-  presencePill: {
-    borderWidth:       1,
-    borderColor:       c.border,
-    borderRadius:      Radius.full,
-    paddingHorizontal: 12,
-    paddingVertical:   6,
-  },
-  presencePillInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  presenceDot: { width: 8, height: 8, borderRadius: 4 },
-  presencePillText: { ...Typography.caption, color: c.textSecondary, fontWeight: '600' },
-});
+    // Presence status card
+    presenceCard: {
+      backgroundColor: c.surface,
+      borderRadius:    Radius.lg,
+      padding:         Spacing.md,
+      borderWidth:     1,
+      borderColor:     c.border,
+      gap:             Spacing.sm,
+    },
+    presenceLabel:   { ...T.label, color: c.textSecondary },
+    presencePillRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+    presencePill: {
+      borderWidth:       1,
+      borderColor:       c.border,
+      borderRadius:      Radius.full,
+      paddingHorizontal: 12,
+      paddingVertical:   6,
+    },
+    presencePillInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    presenceDot: { width: 8, height: 8, borderRadius: 4 },
+    presencePillText: { ...T.caption, color: c.textSecondary, fontWeight: '600' },
+  });
+};
 
 const sectStyles = StyleSheet.create({
   row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.xs },
@@ -1430,7 +1438,7 @@ const infoStyles = StyleSheet.create({
 });
 
 const toggleStyles = StyleSheet.create({
-  row:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, minHeight: MIN_TOUCH + 8 },
+  row:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, padding: Spacing.md, minHeight: MIN_TOUCH + 8 },
   iconWrap: { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
   text:     { flex: 1, gap: 2 },
   label:    { ...Typography.body },
