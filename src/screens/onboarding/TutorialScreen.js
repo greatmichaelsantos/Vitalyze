@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, PanResponder,
-  Animated, StatusBar, SafeAreaView, ActivityIndicator, Platform, Image,
+  Animated, StatusBar, SafeAreaView, Platform, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
@@ -50,7 +50,6 @@ export default function TutorialScreen({ navigation }) {
   const reduceMotion       = useReduceMotion();
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [finishing,    setFinishing]    = useState(false);
 
   const isLast = currentIndex === SLIDES.length - 1;
   const slide  = SLIDES[currentIndex] ?? SLIDES[0];
@@ -75,8 +74,6 @@ export default function TutorialScreen({ navigation }) {
   };
 
   const handleFinish = () => {
-    if (finishing) return;
-    setFinishing(true);
     markSeen().catch(() => {});
     navigation.reset({ index: 0, routes: [{ name: 'ProfileSetup' }] });
   };
@@ -173,26 +170,20 @@ export default function TutorialScreen({ navigation }) {
       {/* Bottom buttons */}
       <View style={styles.btnArea}>
         <TouchableOpacity
-          style={[styles.primaryBtn, { backgroundColor: colors.primary }, finishing && styles.btnDisabled]}
+          style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
           onPress={handleNext}
-          disabled={finishing}
           accessibilityRole="button"
           accessibilityLabel={isLast ? 'Get started with Mend' : `Next, step ${currentIndex + 2} of ${SLIDES.length}`}
-          accessibilityState={{ disabled: finishing, busy: finishing }}
         >
-          {finishing
-            ? <ActivityIndicator color={colors.textInverse} />
-            : <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>
-                {isLast ? 'Get Started' : 'Next'}
-              </Text>
-          }
+          <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>
+            {isLast ? 'Get Started' : 'Next'}
+          </Text>
         </TouchableOpacity>
 
         {!isLast && (
           <TouchableOpacity
             style={styles.skipBtn}
             onPress={handleFinish}
-            disabled={finishing}
             accessibilityRole="button"
             accessibilityLabel="Skip tutorial and go to the app"
           >
@@ -262,7 +253,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btnDisabled: { opacity: 0.7 },
   primaryBtnText: {
     ...Typography.button,
   },
