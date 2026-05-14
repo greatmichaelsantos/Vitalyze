@@ -214,8 +214,8 @@ function CrisisSupport({ selfHarmRisk, colors }) {
             accessibilityLabel={`${h.label} ${h.number}`}
           >
             <Ionicons name="call-outline" size={15} color="rgba(255,255,255,0.8)" />
-            <Text style={crisisStyles.hotlineLabel}>{h.label}</Text>
-            <Text style={crisisStyles.hotlineNumber}>{h.number}</Text>
+            <Text style={crisisStyles.hotlineLabel} numberOfLines={1}>{h.label}</Text>
+            <Text style={crisisStyles.hotlineNumber} numberOfLines={1}>{h.number}</Text>
           </TouchableOpacity>
         </React.Fragment>
       ))}
@@ -445,5 +445,5 @@ const crisisStyles = StyleSheet.create({
   divider:       { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.2)' },
   hotlineRow:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xs + 2 },
   hotlineLabel:  { ...Typography.label, color: 'rgba(255,255,255,0.9)', flex: 1 },
-  hotlineNumber: { ...Typography.label, fontWeight: '700', color: '#fff' },
+  hotlineNumber: { ...Typography.label, fontWeight: '700', color: '#fff', flexShrink: 0 },
 });

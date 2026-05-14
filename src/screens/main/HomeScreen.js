@@ -1161,7 +1161,7 @@ function CkRow({ emoji, label, value, colors, divider = true }) {
       <View style={ckStyles.row}>
         <Text style={ckStyles.emoji}>{emoji}</Text>
         <Text style={[ckStyles.label, { color: colors.textSecondary }]} maxFontSizeMultiplier={1.3}>{label}</Text>
-        <Text style={[ckStyles.value, { color: colors.textPrimary }]}   maxFontSizeMultiplier={1.3}>{value}</Text>
+        <Text style={[ckStyles.value, { color: colors.textPrimary }]}   maxFontSizeMultiplier={1.3} numberOfLines={1}>{value}</Text>
       </View>
       {divider && <View style={[ckStyles.divider, { backgroundColor: colors.border }]} />}
     </>
@@ -1181,7 +1181,7 @@ const ckStyles = StyleSheet.create({
   row:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, gap: Spacing.xs },
   emoji:   { fontSize: 14, width: 20, textAlign: 'center' },
   label:   { ...Typography.bodySmall, flex: 1 },
-  value:   { ...Typography.bodySmall, fontWeight: '700', textAlign: 'right' },
+  value:   { ...Typography.bodySmall, fontWeight: '700', textAlign: 'right', flexShrink: 1 },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 28 },
 });
 

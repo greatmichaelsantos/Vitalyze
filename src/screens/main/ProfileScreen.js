@@ -379,7 +379,7 @@ export default function ProfileScreen({ navigation }) {
               <View style={[styles.rowIconWrap, { backgroundColor: colors.errorLight }]}>
                 <Ionicons name="person-add-outline" size={18} color={colors.error} />
               </View>
-              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>Add Emergency Contact</Text>
+              <Text style={[styles.rowLabel, { color: colors.textPrimary }]} numberOfLines={1}>Add Emergency Contact</Text>
               <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
             </TouchableOpacity>
           </View>
@@ -441,8 +441,8 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.rowIconWrap}>
               <Ionicons name="qr-code-outline" size={18} color={colors.textSecondary} />
             </View>
-            <Text style={styles.rowLabel}>QR Login</Text>
-            <Text style={styles.rowValue}>Log in on another device</Text>
+            <Text style={styles.rowLabel} numberOfLines={1}>QR Login</Text>
+            <Text style={styles.rowValue} numberOfLines={1}>Log in on another device</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
           </TouchableOpacity>
 
@@ -455,8 +455,8 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.rowIconWrap}>
               <Ionicons name="lock-closed-outline" size={18} color={colors.textSecondary} />
             </View>
-            <Text style={styles.rowLabel}>Password</Text>
-            <Text style={styles.rowValue}>Change</Text>
+            <Text style={styles.rowLabel} numberOfLines={1}>Password</Text>
+            <Text style={styles.rowValue} numberOfLines={1}>Change</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
           </TouchableOpacity>
 
@@ -469,8 +469,8 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.rowIconWrap}>
               <Ionicons name="create-outline" size={18} color={colors.textSecondary} />
             </View>
-            <Text style={styles.rowLabel}>Edit Profile</Text>
-            <Text style={styles.rowValue}>Name, age, metrics</Text>
+            <Text style={styles.rowLabel} numberOfLines={1}>Edit Profile</Text>
+            <Text style={styles.rowValue} numberOfLines={1}>Name, age, metrics</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
           </TouchableOpacity>
         </View>
@@ -497,8 +497,8 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.rowIconWrap}>
               <Ionicons name="text-outline" size={18} color={colors.textSecondary} />
             </View>
-            <Text style={styles.rowLabel}>Font Size</Text>
-            <Text style={styles.rowValue}>{FONT_SIZE_LABELS[fontSizeKey]}</Text>
+            <Text style={styles.rowLabel} numberOfLines={1}>Font Size</Text>
+            <Text style={styles.rowValue} numberOfLines={1}>{FONT_SIZE_LABELS[fontSizeKey]}</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
           </TouchableOpacity>
           <View style={{ height: 1, backgroundColor: colors.border }} />
@@ -594,7 +594,7 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.rowIconWrap}>
               <Ionicons name="help-circle-outline" size={18} color={colors.textSecondary} />
             </View>
-            <Text style={styles.rowLabel}>Help &amp; FAQ</Text>
+            <Text style={styles.rowLabel} numberOfLines={1}>Help &amp; FAQ</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
           </TouchableOpacity>
         </View>
@@ -1300,8 +1300,8 @@ function InfoRow({ icon, label, value, colors }) {
       <View style={[infoStyles.iconWrap, { backgroundColor: colors.borderLight }]}>
         <Ionicons name={icon} size={18} color={colors.textSecondary} />
       </View>
-      <Text style={[infoStyles.label, { color: colors.textPrimary, fontSize: labelSize }]}>{label}</Text>
-      <Text style={[infoStyles.value, { color: colors.textSecondary, fontSize: valueSize }]}>{value}</Text>
+      <Text style={[infoStyles.label, { color: colors.textPrimary, fontSize: labelSize }]} numberOfLines={1}>{label}</Text>
+      <Text style={[infoStyles.value, { color: colors.textSecondary, fontSize: valueSize }]} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
@@ -1381,7 +1381,7 @@ const makeStyles = (c, bw = 1, fsm = 1.0) => {
     },
     rowIconWrap:  { width: 36, height: 36, borderRadius: Radius.sm, backgroundColor: c.borderLight, alignItems: 'center', justifyContent: 'center' },
     rowLabel:     { ...T.body, color: c.textPrimary, flex: 1 },
-    rowValue:     { ...T.bodySmall, color: c.textSecondary },
+    rowValue:     { ...T.bodySmall, color: c.textSecondary, flexShrink: 1 },
     actionRow: {
       flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
       padding: Spacing.md, minHeight: MIN_TOUCH,
@@ -1434,7 +1434,7 @@ const infoStyles = StyleSheet.create({
   row:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, minHeight: MIN_TOUCH, borderBottomWidth: 1 },
   iconWrap: { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
   label:    { ...Typography.body, flex: 1 },
-  value:    { ...Typography.bodySmall },
+  value:    { ...Typography.bodySmall, flexShrink: 1 },
 });
 
 const toggleStyles = StyleSheet.create({
