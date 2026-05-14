@@ -21,7 +21,6 @@ import QRLoginScreen             from '../screens/auth/QRLoginScreen';
 import OnboardingScreen       from '../screens/onboarding/OnboardingScreen';
 import TutorialScreen         from '../screens/onboarding/TutorialScreen';
 import ProfileSetupScreen     from '../screens/onboarding/ProfileSetupScreen';
-import WellnessIntentScreen   from '../screens/onboarding/WellnessIntentScreen';
 
 // Main screens
 import HomeScreen     from '../screens/main/HomeScreen';
@@ -208,7 +207,6 @@ export default function AppNavigator() {
             {!profileSetupComplete && (
               <Stack.Screen name="ProfileSetup"   component={ProfileSetupScreen} />
             )}
-            <Stack.Screen name="WellnessIntent" component={WellnessIntentScreen} />
             <Stack.Screen name="Main"           component={MainTabs} />
             <Stack.Screen name="FAQ"         component={FAQScreen} />
             <Stack.Screen name="Circle"      component={CircleScreen} />

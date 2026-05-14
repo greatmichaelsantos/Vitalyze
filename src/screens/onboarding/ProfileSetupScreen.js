@@ -215,7 +215,7 @@ export default function ProfileSetupScreen({ navigation }) {
       if (photoURL) firestoreData.photoURL = photoURL;
 
       await setDoc(doc(db, COLLECTIONS.USERS, user.uid), firestoreData, { merge: true });
-      navigation.replace('WellnessIntent');
+      navigation.replace('Main');
     } catch (err) {
       setErrors({ submit: 'Something went wrong. Please try again.' });
     } finally {
