@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import {
   updateDisplayName, changePassword, deleteAccount, getFriendlyAuthError,
 } from '../../services/authService';
@@ -27,10 +28,25 @@ import {
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 import { PRESENCE_COLORS, PRESENCE_PRESETS } from '../../utils/presenceColors';
 
+const FONT_SIZE_LABELS = {
+  small:      'Small',
+  default:    'Default',
+  large:      'Large',
+  extraLarge: 'Extra Large',
+};
+
+const FONT_SIZE_OPTIONS = [
+  { key: 'small',      label: 'Small',       multiplier: 0.85 },
+  { key: 'default',    label: 'Default',     multiplier: 1.0  },
+  { key: 'large',      label: 'Large',       multiplier: 1.15 },
+  { key: 'extraLarge', label: 'Extra Large', multiplier: 1.3  },
+];
+
 export default function ProfileScreen({ navigation }) {
   const { user, refreshUser }           = useAuth();
-  const { colors, isDark, toggleTheme } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { colors, isDark, toggleTheme, cardBorderWidth } = useTheme();
+  const { fontSizeKey, highContrast, setFontSize, setHighContrast } = useAccessibility();
+  const styles = useMemo(() => makeStyles(colors, cardBorderWidth), [colors, cardBorderWidth]);
 
   const [profile,         setProfile]         = useState(null);
   const [prefs,           setPrefs]           = useState(null);
@@ -48,6 +64,7 @@ export default function ProfileScreen({ navigation }) {
   const [deleteModalOpen,   setDeleteModalOpen]   = useState(false);
   const [signOutModalOpen,  setSignOutModalOpen]  = useState(false);
   const [ecModalOpen,       setEcModalOpen]       = useState(false);
+  const [fontSizeModalOpen, setFontSizeModalOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -458,6 +475,35 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* ── Accessibility ────────────────────────────────────── */}
+        <SectionHeader title="Accessibility" colors={colors} />
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.tappableRow, { borderTopWidth: 0 }]}
+            onPress={() => setFontSizeModalOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Font size, currently ${FONT_SIZE_LABELS[fontSizeKey]}`}
+          >
+            <View style={styles.rowIconWrap}>
+              <Ionicons name="text-outline" size={18} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.rowLabel}>Font Size</Text>
+            <Text style={styles.rowValue}>{FONT_SIZE_LABELS[fontSizeKey]}</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
+          <View style={{ height: 1, backgroundColor: colors.border }} />
+          <ToggleRow
+            icon="contrast-outline"
+            label="High Contrast Mode"
+            sublabel="Increases text and border visibility"
+            value={highContrast}
+            onChange={setHighContrast}
+            accentColor={colors.primary}
+            colors={colors}
+            isLast
+          />
+        </View>
+
         {/* ── Notifications ────────────────────────────────────── */}
         <SectionHeader
           title="Notifications"
@@ -635,6 +681,14 @@ export default function ProfileScreen({ navigation }) {
           setEcModalOpen(false);
         }}
         onClose={() => setEcModalOpen(false)}
+      />
+
+      <FontSizeModal
+        visible={fontSizeModalOpen}
+        currentKey={fontSizeKey}
+        onSelect={(key) => { setFontSize(key); setFontSizeModalOpen(false); }}
+        onClose={() => setFontSizeModalOpen(false)}
+        colors={colors}
       />
     </SafeAreaView>
   );
@@ -1170,6 +1224,60 @@ function EmergencyContactModal({ visible, currentName, currentNumber, currentEma
 }
 
 // ─────────────────────────────────────────────────────────────
+// FONT SIZE MODAL
+// ─────────────────────────────────────────────────────────────
+function FontSizeModal({ visible, currentKey, onSelect, onClose, colors }) {
+  const mStyles = useMemo(() => makeModalStyles(colors), [colors]);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={mStyles.overlay} onPress={onClose}>
+        <Pressable style={mStyles.card} onPress={() => {}}>
+          <Text style={mStyles.title}>Font Size</Text>
+          <Text style={mStyles.subtitle}>Choose how text appears throughout the app.</Text>
+          {FONT_SIZE_OPTIONS.map((opt) => {
+            const selected = currentKey === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                style={[
+                  fsMStyles.optRow,
+                  {
+                    borderColor:       selected ? colors.primary : colors.border,
+                    backgroundColor:   selected ? colors.primaryLight : 'transparent',
+                  },
+                ]}
+                onPress={() => onSelect(opt.key)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={opt.label}
+              >
+                <Text
+                  style={[
+                    fsMStyles.optLabel,
+                    {
+                      color:    selected ? colors.primary : colors.textPrimary,
+                      fontSize: Math.round(15 * opt.multiplier),
+                    },
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+                {selected && (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity style={mStyles.cancelBtn} onPress={onClose}>
+            <Text style={mStyles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // SHARED SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
 function SectionHeader({ title, trailing, colors }) {
@@ -1228,7 +1336,7 @@ function ToggleRow({ icon, label, sublabel, value, onChange, accentColor, colors
 // ─────────────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────────────
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, bw = 1) => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: c.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },
   profileCard: {
@@ -1258,7 +1366,7 @@ const makeStyles = (c) => StyleSheet.create({
   displayName: { ...Typography.h4, color: c.textPrimary },
   email:       { ...Typography.bodySmall, color: c.textSecondary },
   memberSince: { ...Typography.caption, color: c.textTertiary },
-  section:     { backgroundColor: c.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: c.border, overflow: 'hidden' },
+  section:     { backgroundColor: c.surface, borderRadius: Radius.lg, borderWidth: bw, borderColor: c.border, overflow: 'hidden' },
   tappableRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     padding: Spacing.md, minHeight: MIN_TOUCH,
@@ -1388,6 +1496,19 @@ const ecStyles = StyleSheet.create({
     height: 40, borderRadius: Radius.md,
   },
   actionBtnText: { ...Typography.button, fontSize: 14, color: '#fff' },
+});
+
+const fsMStyles = StyleSheet.create({
+  optRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+  },
+  optLabel: { fontWeight: '500' },
 });
 
 const ecModalStyles = StyleSheet.create({

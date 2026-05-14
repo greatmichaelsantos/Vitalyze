@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/context/AuthContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { AccessibilityProvider } from './src/context/AccessibilityContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { registerForPushNotifications } from './src/services/notificationService';
 
@@ -30,11 +31,13 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <AuthProvider>
-          <ThemedApp />
-        </AuthProvider>
-      </ThemeProvider>
+      <AccessibilityProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <ThemedApp />
+          </AuthProvider>
+        </ThemeProvider>
+      </AccessibilityProvider>
     </GestureHandlerRootView>
   );
 }
