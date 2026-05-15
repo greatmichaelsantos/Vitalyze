@@ -40,6 +40,7 @@ import { db } from '../../../firebase';
 import { sendEmail } from '../../services/emailService';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 import { PRESENCE_COLORS, PRESENCE_PRESETS } from '../../utils/presenceColors';
 import { getRiskColor, getRiskBgColor } from '../../utils/colors';
@@ -99,7 +100,8 @@ const STATUS_EMOJIS = ['😊', '😴', '💪', '🔥', '😤', '😔', '☕', '�
 export default function CircleScreen({ navigation, route }) {
   const { user }           = useAuth();
   const { colors, isDark } = useTheme();
-  const styles             = useMemo(() => makeStyles(colors), [colors]);
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles             = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
 
   const storageKey = `circle_id_${user.uid}`;
 
@@ -1133,7 +1135,7 @@ const ciRow = StyleSheet.create({
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
-const makeStyles = (c) =>
+const makeStyles = (c, f) =>
   StyleSheet.create({
     safe:  { flex: 1, backgroundColor: c.background },
     flex1: { flex: 1 },
@@ -1246,7 +1248,7 @@ const makeStyles = (c) =>
       alignItems: 'center', justifyContent: 'center',
       backgroundColor: c.border,
     },
-    emojiPillText: { fontSize: 18 },
+    emojiPillText: { fontSize: 18 * f },
 
     // Presence pills
     presencePillRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
@@ -1287,7 +1289,7 @@ const makeStyles = (c) =>
     },
     inviteCode: {
       fontFamily:  Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize:    26,
+      fontSize:    26 * f,
       fontWeight:  '700',
       letterSpacing: 5,
       color:       c.primary,

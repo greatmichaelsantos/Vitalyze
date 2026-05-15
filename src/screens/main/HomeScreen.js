@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, setDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { getLatestInsight, getUserProfile } from '../../services/firestoreService';
 import { getScoreColor, getRiskColor, getRiskBgColor } from '../../utils/colors';
 import { PRESENCE_COLORS } from '../../utils/presenceColors';
@@ -56,7 +57,8 @@ function exerciseDisplay(val) {
 export default function HomeScreen({ navigation }) {
   const { user }           = useAuth();
   const { colors, isDark } = useTheme();
-  const styles             = useMemo(() => makeStyles(colors), [colors]);
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles             = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
 
   // Profile state
   const [profile, setProfile] = useState(null);
@@ -1423,7 +1425,7 @@ const formatDate = (dateStr) => {
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, f) => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: c.background },
   scroll:  { flex: 1 },
   content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxl },
@@ -1473,7 +1475,7 @@ const makeStyles = (c) => StyleSheet.create({
     maxHeight: '88%',
   },
   infoModalHeader: {
-    fontSize: 20,
+    fontSize: 20 * f,
     fontWeight: '700',
     letterSpacing: -0.2,
     textAlign: 'center',
@@ -1514,7 +1516,7 @@ const makeStyles = (c) => StyleSheet.create({
   // Personalized score sections
   infoScoreSection:  { gap: Spacing.xs, paddingVertical: Spacing.xs },
   infoScoreHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 2 },
-  infoScoreNumber:   { fontSize: 36, fontWeight: '800', letterSpacing: -1 },
+  infoScoreNumber:   { fontSize: 36 * f, fontWeight: '800', letterSpacing: -1 },
   infoScoreTitle:    { ...Typography.h3 },
   infoSummaryText:   { ...Typography.body, fontStyle: 'italic' },
   infoSectionDivider: { height: 1, marginVertical: Spacing.sm },
@@ -1536,7 +1538,7 @@ const makeStyles = (c) => StyleSheet.create({
     marginTop: 8,
     alignSelf: 'flex-start',
   },
-  formulaToggleText: { fontSize: 12, fontWeight: '500' },
+  formulaToggleText: { fontSize: 12 * f, fontWeight: '500' },
   formulaBox: {
     borderRadius: 8,
     padding: 12,
@@ -1546,23 +1548,23 @@ const makeStyles = (c) => StyleSheet.create({
   formulaRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   formulaDivider:    { height: 1, marginVertical: 3 },
   formulaLabel: {
-    fontSize: 12,
+    fontSize: 12 * f,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     flex: 1,
   },
   formulaValue: {
-    fontSize: 12,
+    fontSize: 12 * f,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     textAlign: 'right',
   },
   formulaTotalLabel: {
-    fontSize: 12,
+    fontSize: 12 * f,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     flex: 1,
   },
   formulaTotalValue: {
-    fontSize: 12,
+    fontSize: 12 * f,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     textAlign: 'right',
@@ -1581,7 +1583,7 @@ const makeStyles = (c) => StyleSheet.create({
   bdTotalLabel:   { ...Typography.bodySmall, fontWeight: '600' },
   bdTotalValue:   { ...Typography.bodySmall, fontWeight: '800' },
   overallEquationText: {
-    fontSize: 12,
+    fontSize: 12 * f,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     marginTop: 8,
     textAlign: 'center',
@@ -1755,7 +1757,7 @@ const makeStyles = (c) => StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 999,
   },
-  scorePillText: { ...Typography.caption, fontWeight: '700', fontSize: 10 },
+  scorePillText: { ...Typography.caption, fontWeight: '700', fontSize: 10 * f },
   memberInfo:    { flex: 1, gap: 1, marginLeft: 4 },
   memberName:    { ...Typography.body, fontWeight: '600' },
   youTag:        { ...Typography.caption, fontWeight: '500' },

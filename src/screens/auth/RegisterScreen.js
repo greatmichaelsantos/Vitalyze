@@ -11,6 +11,7 @@ import { auth, db } from '../../../firebase';
 import { register, getFriendlyAuthError } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { Typography, Spacing, Radius, MIN_TOUCH, COLLECTIONS } from '../../utils/constants';
 
 // ── Password requirement checks ──────────────────────────────────────────────
@@ -46,7 +47,8 @@ function metToStrength(met) {
 export default function RegisterScreen({ navigation }) {
   const { colors, isDark } = useTheme();
   const { refreshUser }    = useAuth();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
 
   const [email,          setEmail]          = useState('');
   const [password,       setPassword]       = useState('');
@@ -642,7 +644,7 @@ function InlineError({ message, colors, styles }) {
   );
 }
 
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, f) => StyleSheet.create({
   safe:  { flex: 1, backgroundColor: c.background },
   flex:  { flex: 1 },
   scroll: {

@@ -9,6 +9,7 @@ import { BarChart } from 'react-native-chart-kit';
 import { generateWeeklyReport, generateMonthlyReport } from '../../utils/generateHealthReport';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import {
   getRecentInsights, getHealthLogs, getKnowledgeGraph, getInsightByDate,
 } from '../../services/firestoreService';
@@ -60,7 +61,8 @@ const METRIC_INFO = {
 export default function ProgressScreen({ navigation }) {
   const { user }              = useAuth();
   const { colors, isDark }    = useTheme();
-  const styles                = useMemo(() => makeStyles(colors), [colors]);
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles                = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
   const [insights,      setInsights]      = useState([]);
   const [logs,          setLogs]          = useState([]);
   const [graph,         setGraph]         = useState(null);
@@ -637,7 +639,7 @@ const formatInsightDateTime = (ins) => {
 const moodEmoji = (m) => ['', '😔', '😕', '😐', '🙂', '😄'][m] || '😐';
 
 // ─── Styles ──────────────────────────────────────────────────
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, f) => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: c.background },
   scroll:  { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },

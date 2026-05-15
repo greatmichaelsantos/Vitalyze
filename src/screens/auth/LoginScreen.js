@@ -10,11 +10,13 @@ import { auth } from '../../../firebase';
 import { login, getFriendlyAuthError } from '../../services/authService';
 import { sendEmail } from '../../services/emailService';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 
 export default function LoginScreen({ navigation }) {
-  const { colors, isDark } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { colors, isDark }     = useTheme();
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
 
   const [email,       setEmail]      = useState('');
   const [password,    setPassword]   = useState('');
@@ -280,7 +282,7 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, f) => StyleSheet.create({
   safe:  { flex: 1, backgroundColor: c.background },
   flex:  { flex: 1 },
   scroll: {
@@ -336,7 +338,7 @@ const makeStyles = (c) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   forgotWrap: { alignSelf: 'flex-end', minHeight: MIN_TOUCH, justifyContent: 'center' },
-  forgotText: { fontSize: 13, color: c.primary },
+  forgotText: { fontSize: 13 * f, color: c.primary },
   resetMsgBox: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   resetMsgText: { ...Typography.caption, flex: 1 },
   errorBox: {

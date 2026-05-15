@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   SafeAreaView, StatusBar, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 
@@ -47,7 +48,7 @@ const FAQ_ITEMS = [
 
 // ── Accordion item ─────────────────────────────────────────────────────────────
 
-function AccordionItem({ question, answer, isLast, reduceMotion, colors }) {
+function AccordionItem({ question, answer, isLast, reduceMotion, colors, styles }) {
   const [expanded, setExpanded] = useState(false);
   const animOpacity = useRef(new Animated.Value(0)).current;
 
@@ -127,7 +128,9 @@ function AccordionItem({ question, answer, isLast, reduceMotion, colors }) {
 
 export default function FAQScreen({ navigation }) {
   const { colors, isDark } = useTheme();
+  const { fontSizeMultiplier } = useAccessibility();
   const reduceMotion = useReduceMotion();
+  const styles = useMemo(() => makeStyles(fontSizeMultiplier), [fontSizeMultiplier]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
@@ -189,6 +192,7 @@ export default function FAQScreen({ navigation }) {
               isLast={index === FAQ_ITEMS.length - 1}
               reduceMotion={reduceMotion}
               colors={colors}
+              styles={styles}
             />
           ))}
         </View>
@@ -218,7 +222,7 @@ export default function FAQScreen({ navigation }) {
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const makeStyles = (f) => StyleSheet.create({
   safe: { flex: 1 },
 
   header: {

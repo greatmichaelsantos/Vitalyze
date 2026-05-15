@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { db } from '../../../firebase';
 import { saveCheckIn, queueOfflineCheckIn } from '../../services/firestoreService';
 import { notifyForAlerts } from '../../services/notificationService';
@@ -50,7 +51,8 @@ export default function CheckInScreen({ navigation }) {
   const { user }           = useAuth();
   const { colors, isDark } = useTheme();
   const reduceMotion       = useReduceMotion();
-  const styles             = useMemo(() => makeStyles(colors), [colors]);
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles             = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
 
   const [step,    setStep]    = useState(1);
   const [form,    setForm]    = useState({ ...DEFAULT_FORM });
@@ -774,7 +776,7 @@ function Chip({ label, active, onPress, multiSelect, colors }) {
 }
 
 // ─── Styles ──────────────────────────────────────────────────
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, f) => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: c.background },
   scroll: { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: 100 },

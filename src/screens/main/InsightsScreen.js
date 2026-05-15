@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAccessibility } from '../../context/AccessibilityContext';
 import { getLatestInsight } from '../../services/firestoreService';
 import { generateRiskFactors } from '../../services/aiPatternDetection';
 import { getScoreColor, getRiskColor, getRiskBgColor } from '../../utils/colors';
@@ -44,7 +45,8 @@ const formatDate = (dateStr) => {
 export default function InsightsScreen({ navigation }) {
   const { user }              = useAuth();
   const { colors, isDark }    = useTheme();
-  const styles                = useMemo(() => makeStyles(colors), [colors]);
+  const { fontSizeMultiplier } = useAccessibility();
+  const styles                = useMemo(() => makeStyles(colors, fontSizeMultiplier), [colors, fontSizeMultiplier]);
   const scrollViewRef = useRef(null);
   const [insight,  setInsight]   = useState(null);
   const [loading,  setLoading]   = useState(true);
@@ -348,7 +350,7 @@ function DomainFactors({ factors, accentColor, colors }) {
   );
 }
 
-const makeStyles = (c) => StyleSheet.create({
+const makeStyles = (c, f) => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: c.background },
   scroll: { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.lg },
