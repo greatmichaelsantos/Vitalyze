@@ -900,12 +900,12 @@ export const generateRiskFactors = (nodeWeights) => {
 // ────────────────────────────────────────────────────────────
 
 /**
- * Call the Gemini API with the user's open-ended check-in text and today's
- * health scores. Returns 2-3 personalised recommendation objects, or [] on
- * any failure so the caller is never blocked.
+ * Call the Groq API (llama3-8b-8192) with the user's open-ended check-in
+ * text and today's health scores. Returns 2-3 personalised recommendation
+ * objects, or [] on any failure so the caller is never blocked.
  */
 export const generatePersonalizedRecommendations = async (openEndedResponses, scores) => {
-  console.log('[Gemini] openEndedResponses passed to Gemini:', JSON.stringify(openEndedResponses));
+  console.log('[Groq] openEndedResponses:', JSON.stringify(openEndedResponses));
   try {
     const hasContent =
       openEndedResponses &&
@@ -914,52 +914,37 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
       );
     if (!hasContent) return [];
 
-    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-    console.log('[Gemini] API key present:', !!apiKey);
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     if (!apiKey) return [];
 
-    console.log('[Gemini] calling API...');
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text:
-                `You are a wellness advisor inside a health app called Mend. The user just completed a daily health check-in. Give 2-3 short, warm, specific wellness recommendations.\n\n` +
-                `IMPORTANT: Base your recommendations on BOTH:\n` +
-                `1. What the user personally wrote (prioritize this — be specific to their exact words)\n` +
-                `2. Their health scores as supporting context\n\n` +
-                `What the user wrote:\n` +
-                `${Object.entries(openEndedResponses).map(([q, a]) => `- ${q}: "${a}"`).join('\n')}\n\n` +
-                `Their scores today:\n` +
-                `- Overall: ${scores.overallScore}/100\n` +
-                `- Physical: ${scores.physicalScore}/100\n` +
-                `- Mental: ${scores.mentalScore}/100\n\n` +
-                `Rules:\n` +
-                `- If the user mentioned something specific (e.g. "academic pressure", "talked to my gf", "projects draining me") — address THAT directly in at least one recommendation\n` +
-                `- Do not give generic advice that ignores what they wrote\n` +
-                `- Keep each recommendation to 1-2 sentences, warm and actionable\n` +
-                `- Respond in JSON only, no markdown: { "recommendations": [{ "title": "...", "body": "..." }] }`,
-            }],
-          }],
-        }),
-      }
-    );
-    console.log('[Gemini] response status:', response.status);
-    const errorText = await response.clone().text();
-    console.log('[Gemini] error body:', errorText.slice(0, 500));
-
-    if (!response.ok) return [];
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a wellness advisor inside a health app called Mend. Give 2-3 short, warm, actionable wellness recommendations based on what the user shared. Be specific to their exact words — not generic. Keep each recommendation to 1-2 sentences. Respond in JSON only, no markdown: { "recommendations": [{ "title": "...", "body": "..." }] }',
+          },
+          {
+            role: 'user',
+            content:
+              `What the user wrote:\n${Object.entries(openEndedResponses).map(([q, a]) => `- ${q}: "${a}"`).join('\n')}\n\n` +
+              `Scores: Overall ${scores.overallScore}/100, Physical ${scores.physicalScore}/100, Mental ${scores.mentalScore}/100.`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    });
+    console.log('[Groq] response status:', response.status);
     const data = await response.json();
-    console.log('[Gemini] raw data:', JSON.stringify(data).slice(0, 500));
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    console.log('[Gemini] raw response:', text);
+    console.log('[Groq] raw data:', JSON.stringify(data).slice(0, 500));
+    const text = data.choices?.[0]?.message?.content || '{}';
     const clean = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     return parsed.recommendations || [];
