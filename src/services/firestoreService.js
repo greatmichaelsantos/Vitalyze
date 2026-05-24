@@ -65,7 +65,7 @@ export const saveCheckIn = async (userId, checkInData) => {
   // 5. Run AI analysis
   const analysis = analyzeHealthData(checkInData, graph, userProfile);
 
-  // 5b. Generate Claude-powered personalised recommendations (non-fatal)
+  // 5b. Generate Gemini-powered personalised recommendations (non-fatal)
   const personalizedRecommendations = await generatePersonalizedRecommendations(
     checkInData.openEndedResponses,
     analysis

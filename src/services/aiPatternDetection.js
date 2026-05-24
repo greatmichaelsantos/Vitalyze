@@ -905,6 +905,7 @@ export const generateRiskFactors = (nodeWeights) => {
  * any failure so the caller is never blocked.
  */
 export const generatePersonalizedRecommendations = async (openEndedResponses, scores) => {
+  console.log('[Gemini] openEndedResponses passed to Gemini:', JSON.stringify(openEndedResponses));
   try {
     const hasContent =
       openEndedResponses &&
@@ -949,6 +950,7 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
     if (!response.ok) return [];
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    console.log('[Gemini] raw response:', text);
     const clean = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     return parsed.recommendations || [];
