@@ -513,7 +513,7 @@ const detectBMIPattern = (userProfile) => {
       id: 'bmi_overweight',
       name: 'BMI in Overweight Range',
       description: `Your BMI is ${bmi.toFixed(1)}, which is in the overweight range (25–29.9). Even a 5% reduction in body weight can noticeably improve energy levels and metabolic health.`,
-      severity: 'low',
+      severity: 'medium',
       category: 'physical',
       scienceRef: 'A 5% weight reduction in overweight individuals reduces key cardiovascular risk factors by 20–30% (NEJM, 2011).',
     };
@@ -978,6 +978,7 @@ export async function generateDailyAISummary(checkInData, scores, detectedPatter
             content: `You are a warm, supportive wellness advisor inside a health app called Mend.
 Your job is to generate personalized, specific daily health commentary based on what the user logged today.
 Never be generic. Always reference their specific data.
+Keep dailySummary to maximum 2 sentences only. Be concise.
 Respond in JSON only, no markdown.`,
           },
           {

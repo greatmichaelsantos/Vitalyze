@@ -74,6 +74,7 @@ export const saveCheckIn = async (userId, checkInData) => {
   console.log('[Groq] saving recommendations:', personalizedRecommendations.length);
 
   // 5c. Generate daily AI summary (non-fatal)
+  console.log('[DailyAI] meal data:', checkInData.mealType, checkInData.mealDetails, checkInData.dietQuality, checkInData.meals);
   const dailyAISummary = await generateDailyAISummary(
     checkInData,
     analysis,

@@ -424,23 +424,20 @@ const aiStyles = StyleSheet.create({
 
 function PersonalizedRecommendations({ recommendations, colors }) {
   return (
-    <View style={[prStyles.container, { backgroundColor: colors.mentalLight, borderColor: colors.mentalAccent + '40' }]}>
-      <View style={prStyles.header}>
-        <View style={[prStyles.iconWrap, { backgroundColor: colors.mentalAccent + '22' }]}>
-          <Ionicons name="sparkles-outline" size={18} color={colors.mentalAccent} />
-        </View>
-        <Text style={[prStyles.title, { color: colors.mentalAccent }]}>Personalized for You 🎯</Text>
-      </View>
+    <View style={prStyles.wrapper}>
+      <SubsectionLabel label="Personalized for You 🎯" count={recommendations.length} accentColor={colors.mentalAccent} colors={colors} />
       {recommendations.map((rec, i) => (
         <View
           key={i}
-          style={[
-            prStyles.card,
-            { backgroundColor: colors.surface, borderColor: colors.mentalAccent + '30' },
-          ]}
+          style={[prStyles.card, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftColor: colors.mentalAccent }]}
         >
-          <Text style={[prStyles.recTitle, { color: colors.textPrimary }]}>{rec.title}</Text>
-          <Text style={[prStyles.recBody,  { color: colors.textSecondary }]}>{rec.body}</Text>
+          <View style={prStyles.cardHeader}>
+            <View style={[prStyles.iconWrap, { backgroundColor: colors.mentalAccent + '22' }]}>
+              <Ionicons name="sparkles-outline" size={16} color={colors.mentalAccent} />
+            </View>
+            <Text style={[prStyles.recTitle, { color: colors.textPrimary }]}>{rec.title}</Text>
+          </View>
+          <Text style={[prStyles.recBody, { color: colors.textSecondary }]}>{rec.body}</Text>
         </View>
       ))}
     </View>
@@ -448,37 +445,30 @@ function PersonalizedRecommendations({ recommendations, colors }) {
 }
 
 const prStyles = StyleSheet.create({
-  container: {
-    borderRadius: Radius.lg,
-    borderWidth: 1.5,
-    overflow: 'hidden',
+  wrapper: { gap: Spacing.xs },
+  card: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderLeftWidth: 4,
     padding: Spacing.md,
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
-  header: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
   },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.md,
+    width: 32,
+    height: 32,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: {
-    ...Typography.h4,
-    fontWeight: '700',
-  },
-  card: {
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    padding: Spacing.md,
-    gap: Spacing.xs,
-  },
   recTitle: {
-    ...Typography.label,
+    ...Typography.h4,
+    flexShrink: 1,
     fontWeight: '700',
   },
   recBody: {
