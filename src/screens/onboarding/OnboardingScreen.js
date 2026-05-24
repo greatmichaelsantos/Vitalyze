@@ -94,7 +94,7 @@ export default function OnboardingScreen({ navigation }) {
       </View>
 
       {/* Institutional branding — fixed above slides */}
-      <View style={[styles.brandBlock, { backgroundColor: 'red' }]}>
+      <View style={styles.brandBlock}>
         <View style={styles.brandRow}>
           <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
             <Image source={gcLogo}  style={styles.logo} resizeMode="contain" />
@@ -106,68 +106,68 @@ export default function OnboardingScreen({ navigation }) {
         <Text style={styles.brandText}>Gordon College • College of Computer Studies</Text>
       </View>
 
-      {/* Slides */}
-      <Animated.FlatList
-        ref={flatListRef}
-        data={SLIDES}
-        keyExtractor={(item) => item.id}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
-          useNativeDriver: false,
-        })}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={{ viewAreaCoveragePercentThreshold: 50 }}
-        renderItem={({ item }) => (
-          <View style={[styles.slide, { width: SCREEN_W }]}>
-            <View style={[styles.iconCircle, { backgroundColor: item.iconBg }]}>
-              <Ionicons name={item.icon} size={64} color={item.iconColor} />
+      {/* Slides + dots + button in a flex container so FlatList doesn't overflow */}
+      <View style={styles.slideArea}>
+        <Animated.FlatList
+          ref={flatListRef}
+          data={SLIDES}
+          keyExtractor={(item) => item.id}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          style={styles.flatList}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+            useNativeDriver: false,
+          })}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ viewAreaCoveragePercentThreshold: 50 }}
+          renderItem={({ item }) => (
+            <View style={[styles.slide, { width: SCREEN_W }]}>
+              <View style={[styles.iconCircle, { backgroundColor: item.iconBg }]}>
+                <Ionicons name={item.icon} size={64} color={item.iconColor} />
+              </View>
+              <Text style={styles.slideTitle}>{item.title}</Text>
+              <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
             </View>
-            <Text style={styles.slideTitle}>{item.title}</Text>
-            <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
-          </View>
-        )}
-      />
+          )}
+        />
 
-      {/* Dot indicators */}
-      <View style={styles.dots} accessibilityRole="tablist">
-        {SLIDES.map((_, i) => {
-          const isActive   = i === currentIndex;
-          const inputRange = [(i - 1) * SCREEN_W, i * SCREEN_W, (i + 1) * SCREEN_W];
+        {/* Dot indicators */}
+        <View style={styles.dots} accessibilityRole="tablist">
+          {SLIDES.map((_, i) => {
+            const isActive   = i === currentIndex;
+            const inputRange = [(i - 1) * SCREEN_W, i * SCREEN_W, (i + 1) * SCREEN_W];
 
-          // When reduce motion is on, skip interpolated width/opacity —
-          // use static values so no animation runs at all.
-          const dotWidth = reduceMotion
-            ? (isActive ? 24 : 8)
-            : scrollX.interpolate({
-                inputRange,
-                outputRange: [8, 24, 8],
-                extrapolate: 'clamp',
-              });
-          const opacity = reduceMotion
-            ? (isActive ? 1 : 0.3)
-            : scrollX.interpolate({
-                inputRange,
-                outputRange: [0.3, 1, 0.3],
-                extrapolate: 'clamp',
-              });
+            const dotWidth = reduceMotion
+              ? (isActive ? 24 : 8)
+              : scrollX.interpolate({
+                  inputRange,
+                  outputRange: [8, 24, 8],
+                  extrapolate: 'clamp',
+                });
+            const opacity = reduceMotion
+              ? (isActive ? 1 : 0.3)
+              : scrollX.interpolate({
+                  inputRange,
+                  outputRange: [0.3, 1, 0.3],
+                  extrapolate: 'clamp',
+                });
 
-          return (
-            <Animated.View
-              key={i}
-              style={[styles.dot, { width: dotWidth, opacity }]}
-              accessible={true}
-              accessibilityRole="tab"
-              accessibilityLabel={`Slide ${i + 1} of ${SLIDES.length}${isActive ? ', active' : ''}`}
-              accessibilityState={{ selected: isActive }}
-            />
-          );
-        })}
-      </View>
+            return (
+              <Animated.View
+                key={i}
+                style={[styles.dot, { width: dotWidth, opacity }]}
+                accessible={true}
+                accessibilityRole="tab"
+                accessibilityLabel={`Slide ${i + 1} of ${SLIDES.length}${isActive ? ', active' : ''}`}
+                accessibilityState={{ selected: isActive }}
+              />
+            );
+          })}
+        </View>
 
-      {/* CTA button */}
-      <View style={styles.btnRow}>
+        {/* CTA button */}
+        <View style={styles.btnRow}>
         <TouchableOpacity
           style={[styles.nextBtn, finishing && { opacity: 0.7 }]}
           onPress={handleNext}
@@ -191,6 +191,7 @@ export default function OnboardingScreen({ navigation }) {
             </>
           )}
         </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -233,7 +234,14 @@ const styles = StyleSheet.create({
   brandBlock: {
     alignItems: 'center',
     paddingVertical: Spacing.sm,
-    minHeight: 72,
+    height: 80,
+    justifyContent: 'center',
+  },
+  slideArea: {
+    flex: 1,
+  },
+  flatList: {
+    flex: 1,
   },
   brandRow: {
     flexDirection: 'row',
