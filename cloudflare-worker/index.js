@@ -421,12 +421,15 @@ async function handleCustomToken(request, env) {
       return json({ error: 'Missing required field: uid' }, 400);
     }
 
-    const sa         = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
-    const privateKey = await importPrivateKey(sa.private_key);
-    const token      = await generateCustomToken(body.uid, sa.client_email, privateKey);
+    const sa          = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+    const privateKey  = await importPrivateKey(sa.private_key);
+    const customToken = await generateCustomToken(body.uid, sa.client_email, privateKey);
 
-    return json({ token });
+    const responseBody = { customToken };
+    console.log('handleCustomToken response:', JSON.stringify({ uid: body.uid, customTokenLength: customToken.length }));
+    return json(responseBody);
   } catch (e) {
+    console.log('handleCustomToken error:', e.message);
     return json({ error: e.message }, 500);
   }
 }
