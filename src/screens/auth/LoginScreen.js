@@ -156,7 +156,7 @@ export default function LoginScreen({ navigation }) {
                 <Ionicons name="mail-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
-                  placeholder="2021-00123"
+                  placeholder="202xxxxxxx"
                   placeholderTextColor={colors.textTertiary}
                   value={email}
                   onChangeText={(t) => { setEmail(t); setError(''); }}
