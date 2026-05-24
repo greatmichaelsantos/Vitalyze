@@ -147,9 +147,7 @@ export default function RegisterScreen({ navigation }) {
   const validate = () => {
     const e = {};
     if (!email.trim()) {
-      e.email = 'This field is required.';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      e.email = 'Please enter a valid email address (e.g. you@example.com).';
+      e.email = 'GC ID Number is required.';
     }
     if (!password) {
       e.password = 'This field is required.';
@@ -170,12 +168,12 @@ export default function RegisterScreen({ navigation }) {
     setFieldErrors({});
     setLoading(true);
     try {
-      const user = await register(email.trim().toLowerCase(), password);
+      const user = await register(email.trim() + '@gordoncollege.edu.ph', password);
       await sendEmailVerification(user);
       setVerifyMode(true);
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
-        setFieldErrors({ email: 'An account with this email already exists. Try signing in instead.' });
+        setFieldErrors({ email: 'An account with this GC ID already exists. Try signing in instead.' });
       } else {
         setFieldErrors({ submit: getFriendlyAuthError(err.code) });
       }
@@ -277,7 +275,7 @@ export default function RegisterScreen({ navigation }) {
             <Text style={styles.verifyTitle}>Verify Your Email</Text>
             <Text style={styles.verifyMessage}>
               {'We sent a verification link to '}
-              <Text style={styles.verifyEmail}>{email.trim().toLowerCase()}</Text>
+              <Text style={styles.verifyEmail}>{email.trim() + '@gordoncollege.edu.ph'}</Text>
               {'. Please check your inbox and click the link to continue.'}
             </Text>
 
@@ -387,19 +385,19 @@ export default function RegisterScreen({ navigation }) {
           <View style={styles.card}>
             {/* ── Email ─────────────────────────────────────────────────── */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email address</Text>
+              <Text style={styles.label}>GC ID Number</Text>
               <View style={[styles.inputWrap, fieldErrors.email && styles.inputError]}>
                 <Ionicons name="mail-outline" size={18} color={colors.textTertiary} style={styles.icon} />
                 <TextInput
                   style={styles.input}
-                  placeholder="you@example.com"
+                  placeholder="2021-00123"
                   placeholderTextColor={colors.textTertiary}
                   value={email}
                   onChangeText={(t) => { setEmail(t); clearFieldError('email'); }}
-                  keyboardType="email-address"
+                  keyboardType="numeric"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  textContentType="emailAddress"
+                  textContentType="none"
                   returnKeyType="next"
                 />
               </View>

@@ -70,7 +70,7 @@ export default function LoginScreen({ navigation }) {
       return;
     }
     try {
-      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+      await sendPasswordResetEmail(auth, email.trim() + '@gordoncollege.edu.ph');
       setResetMsg('Password reset email sent. Check your inbox.');
     } catch {
       setResetErr('Failed to send reset email. Please try again.');
@@ -85,7 +85,7 @@ export default function LoginScreen({ navigation }) {
     setResetErr('');
     setLoading(true);
     try {
-      await login(email.trim().toLowerCase(), password);
+      await login(email.trim() + '@gordoncollege.edu.ph', password);
       const u = auth.currentUser;
       if (u?.email) {
         const name = u.displayName || u.email.split('@')[0];
@@ -151,19 +151,19 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.cardSubtitle}>Welcome back. Enter your credentials to continue.</Text>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email address</Text>
+              <Text style={styles.label}>GC ID Number</Text>
               <View style={styles.inputWrap}>
                 <Ionicons name="mail-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
-                  placeholder="you@example.com"
+                  placeholder="2021-00123"
                   placeholderTextColor={colors.textTertiary}
                   value={email}
                   onChangeText={(t) => { setEmail(t); setError(''); }}
-                  keyboardType="email-address"
+                  keyboardType="numeric"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  textContentType="emailAddress"
+                  textContentType="none"
                   returnKeyType="next"
                 />
               </View>
