@@ -439,11 +439,18 @@ function PersonalizedRecommendations({ recommendations, colors }) {
 const prStyles = StyleSheet.create({
   wrapper: { gap: Spacing.xs },
   card: {
-    backgroundColor: '#F5F3FF',
+    backgroundColor: '#F0EEFF',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
     padding: 16,
     gap: Spacing.xs,
     marginBottom: Spacing.sm,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   recTitle: {
     ...Typography.h4,
