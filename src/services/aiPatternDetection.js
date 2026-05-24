@@ -905,6 +905,8 @@ export const generateRiskFactors = (nodeWeights) => {
  * objects, or [] on any failure so the caller is never blocked.
  */
 export const generatePersonalizedRecommendations = async (openEndedResponses, scores) => {
+  console.log('[Groq] API key present:', !!process.env.EXPO_PUBLIC_GROQ_API_KEY);
+  console.log('[Groq] key value:', process.env.EXPO_PUBLIC_GROQ_API_KEY?.slice(0, 10));
   console.log('[Groq] openEndedResponses:', JSON.stringify(openEndedResponses));
   try {
     const hasContent =
