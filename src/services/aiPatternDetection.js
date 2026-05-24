@@ -916,7 +916,7 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
       );
     if (!hasContent) return [];
 
-    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    const apiKey = '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'; // TEMP: hardcoded for testing
     if (!apiKey) return [];
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
