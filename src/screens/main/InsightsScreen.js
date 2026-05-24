@@ -184,6 +184,7 @@ export default function InsightsScreen({ navigation }) {
               colors={colors}
             />
 
+            {console.log('[Insights] personalizedRecommendations:', insight?.personalizedRecommendations)}
             {Array.isArray(insight.personalizedRecommendations) &&
               insight.personalizedRecommendations.length > 0 && (
                 <PersonalizedRecommendations
