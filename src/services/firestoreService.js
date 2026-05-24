@@ -70,6 +70,7 @@ export const saveCheckIn = async (userId, checkInData) => {
     checkInData.openEndedResponses,
     analysis
   );
+  console.log('[Gemini] recommendations result:', JSON.stringify(personalizedRecommendations));
 
   // 6. Save insights
   const insightRef = await addDoc(collection(db, COLLECTIONS.INSIGHTS), {
