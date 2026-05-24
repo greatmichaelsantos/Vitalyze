@@ -900,7 +900,7 @@ export const generateRiskFactors = (nodeWeights) => {
 // ────────────────────────────────────────────────────────────
 
 /**
- * Call the Claude API with the user's open-ended check-in text and today's
+ * Call the Gemini API with the user's open-ended check-in text and today's
  * health scores. Returns 2-3 personalised recommendation objects, or [] on
  * any failure so the caller is never blocked.
  */
@@ -925,9 +925,21 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
           contents: [{
             parts: [{
               text:
-                `You are a wellness advisor inside a health app called Mend. The user has just completed a daily check-in. Based on their responses and health scores, give 2-3 short, warm, actionable wellness recommendations. Be specific to what they shared — not generic. Keep each recommendation to 1-2 sentences. Respond in JSON format only with no markdown: { "recommendations": [{ "title": "...", "body": "..." }] }\n\n` +
-                `The user wrote:\n${JSON.stringify(openEndedResponses)}\n\n` +
-                `Scores: Overall ${scores.overallScore}/100, Physical ${scores.physicalScore}/100, Mental ${scores.mentalScore}/100.`,
+                `You are a wellness advisor inside a health app called Mend. The user just completed a daily health check-in. Give 2-3 short, warm, specific wellness recommendations.\n\n` +
+                `IMPORTANT: Base your recommendations on BOTH:\n` +
+                `1. What the user personally wrote (prioritize this — be specific to their exact words)\n` +
+                `2. Their health scores as supporting context\n\n` +
+                `What the user wrote:\n` +
+                `${Object.entries(openEndedResponses).map(([q, a]) => `- ${q}: "${a}"`).join('\n')}\n\n` +
+                `Their scores today:\n` +
+                `- Overall: ${scores.overallScore}/100\n` +
+                `- Physical: ${scores.physicalScore}/100\n` +
+                `- Mental: ${scores.mentalScore}/100\n\n` +
+                `Rules:\n` +
+                `- If the user mentioned something specific (e.g. "academic pressure", "talked to my gf", "projects draining me") — address THAT directly in at least one recommendation\n` +
+                `- Do not give generic advice that ignores what they wrote\n` +
+                `- Keep each recommendation to 1-2 sentences, warm and actionable\n` +
+                `- Respond in JSON only, no markdown: { "recommendations": [{ "title": "...", "body": "..." }] }`,
             }],
           }],
         }),
