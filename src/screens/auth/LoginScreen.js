@@ -13,6 +13,9 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAccessibility } from '../../context/AccessibilityContext';
 import { Typography, Spacing, Radius, MIN_TOUCH } from '../../utils/constants';
 
+const gcLogo  = require('../../assets/gc-logo.png');
+const ccsLogo = require('../../assets/ccs-logo.png');
+
 export default function LoginScreen({ navigation }) {
   const { colors, isDark }     = useTheme();
   const { fontSizeMultiplier } = useAccessibility();
@@ -129,6 +132,17 @@ export default function LoginScreen({ navigation }) {
             />
             <Text style={styles.appName} accessibilityRole="header">Mend</Text>
             <Text style={styles.tagline} maxFontSizeMultiplier={1.5}>AI-driven health monitoring</Text>
+            <View style={styles.instLogoRow}>
+              <View style={isDark ? styles.instLogoBg : null}>
+                <Image source={gcLogo}  style={styles.instLogo} resizeMode="contain" />
+              </View>
+              <View style={isDark ? styles.instLogoBg : null}>
+                <Image source={ccsLogo} style={styles.instLogo} resizeMode="contain" />
+              </View>
+            </View>
+            <Text style={[styles.instText, { color: colors.textSecondary }]}>
+              Gordon College • College of Computer Studies
+            </Text>
           </View>
 
           {/* Form Card */}
@@ -293,6 +307,10 @@ const makeStyles = (c, f) => StyleSheet.create({
     gap: Spacing.xl,
   },
   brandWrap:  { alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.lg },
+  instLogoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  instLogo:    { width: 50, height: 50, marginHorizontal: 8 },
+  instLogoBg:  { backgroundColor: 'white', borderRadius: 8, padding: 4, marginHorizontal: 8 },
+  instText:    { fontSize: 11, textAlign: 'center' },
   logoCircle: {
     width: 80, height: 80, borderRadius: 40,
     backgroundColor: c.primaryLight,
