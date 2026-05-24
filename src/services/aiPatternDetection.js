@@ -949,6 +949,8 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
       }
     );
     console.log('[Gemini] response status:', response.status);
+    const errorText = await response.clone().text();
+    console.log('[Gemini] error body:', errorText.slice(0, 500));
 
     if (!response.ok) return [];
     const data = await response.json();
