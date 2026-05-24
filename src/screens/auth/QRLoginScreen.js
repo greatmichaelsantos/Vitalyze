@@ -313,11 +313,20 @@ function ScanPane({ colors, styles, navigation }) {
       console.log('worker response status:', workerRes.status);
 
       if (!workerRes.ok) {
-        throw new Error(`Worker responded ${workerRes.status}`);
+        const errBody = await workerRes.text().catch(() => '(unreadable)');
+        console.log('worker error body:', errBody);
+        throw new Error(`Worker responded ${workerRes.status}: ${errBody}`);
       }
 
-      const { customToken } = await workerRes.json();
-      console.log('customToken received, length:', customToken?.length);
+      const workerJson = await workerRes.json();
+      console.log('worker response body:', JSON.stringify(workerJson));
+      const { customToken } = workerJson;
+
+      if (!customToken) {
+        throw new Error('Worker returned no customToken');
+      }
+
+      console.log('customToken received, length:', customToken.length);
 
       await signInWithCustomToken(auth, customToken);
       console.log('signInWithCustomToken done');
@@ -325,8 +334,10 @@ function ScanPane({ colors, styles, navigation }) {
       setScanStatus('success');
       setTimeout(() => navigation.replace('Main'), 1500);
     } catch (err) {
-      console.log('Scan error:', err.message, err.code, err);
-      setMessage('Something went wrong. Please try again.');
+      console.log('QR scan error:', err);
+      console.log('QR scan error message:', err.message);
+      console.log('QR scan error code:', err.code);
+      setMessage(`Scan failed: ${err.message || 'Unknown error'}`);
       setScanStatus('error');
     } finally {
       processingRef.current = false;
