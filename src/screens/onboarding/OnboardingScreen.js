@@ -93,6 +93,17 @@ export default function OnboardingScreen({ navigation }) {
         ) : <View />}
       </View>
 
+      {/* Institutional branding — fixed above slides */}
+      <View style={styles.brandRow}>
+        <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
+          <Image source={gcLogo}  style={styles.logo} resizeMode="contain" />
+        </View>
+        <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
+          <Image source={ccsLogo} style={styles.logo} resizeMode="contain" />
+        </View>
+      </View>
+      <Text style={styles.brandText}>Gordon College • College of Computer Studies</Text>
+
       {/* Slides */}
       <Animated.FlatList
         ref={flatListRef}
@@ -111,15 +122,6 @@ export default function OnboardingScreen({ navigation }) {
             <View style={[styles.iconCircle, { backgroundColor: item.iconBg }]}>
               <Ionicons name={item.icon} size={64} color={item.iconColor} />
             </View>
-            <View style={styles.brandRow}>
-              <View style={isDark ? styles.logoBg : null}>
-                <Image source={gcLogo}  style={styles.logo} resizeMode="contain" />
-              </View>
-              <View style={isDark ? styles.logoBg : null}>
-                <Image source={ccsLogo} style={styles.logo} resizeMode="contain" />
-              </View>
-            </View>
-            <Text style={styles.brandText}>Gordon College • College of Computer Studies</Text>
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
           </View>
@@ -230,24 +232,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 0,
+    paddingTop: Spacing.sm,
+  },
+  logoClip: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginHorizontal: 8,
   },
   logo: {
     width: 50,
     height: 50,
-    marginHorizontal: 8,
-  },
-  logoBg: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 4,
-    marginHorizontal: 8,
   },
   brandText: {
     fontSize: 11,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginTop: -Spacing.sm,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
   slideTitle: {
     ...Typography.h2,

@@ -133,10 +133,10 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.appName} accessibilityRole="header">Mend</Text>
             <Text style={styles.tagline} maxFontSizeMultiplier={1.5}>AI-driven health monitoring</Text>
             <View style={styles.instLogoRow}>
-              <View style={isDark ? styles.instLogoBg : null}>
+              <View style={[styles.instLogoClip, isDark && { backgroundColor: 'white' }]}>
                 <Image source={gcLogo}  style={styles.instLogo} resizeMode="contain" />
               </View>
-              <View style={isDark ? styles.instLogoBg : null}>
+              <View style={[styles.instLogoClip, isDark && { backgroundColor: 'white' }]}>
                 <Image source={ccsLogo} style={styles.instLogo} resizeMode="contain" />
               </View>
             </View>
@@ -307,9 +307,9 @@ const makeStyles = (c, f) => StyleSheet.create({
     gap: Spacing.xl,
   },
   brandWrap:  { alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.lg },
-  instLogoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  instLogo:    { width: 50, height: 50, marginHorizontal: 8 },
-  instLogoBg:  { backgroundColor: 'white', borderRadius: 8, padding: 4, marginHorizontal: 8 },
+  instLogoRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  instLogoClip: { width: 50, height: 50, borderRadius: 25, overflow: 'hidden', marginHorizontal: 8 },
+  instLogo:     { width: 50, height: 50 },
   instText:    { fontSize: 11, textAlign: 'center' },
   logoCircle: {
     width: 80, height: 80, borderRadius: 40,
