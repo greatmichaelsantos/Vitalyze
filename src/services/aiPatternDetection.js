@@ -915,8 +915,10 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
     if (!hasContent) return [];
 
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    console.log('[Gemini] API key present:', !!apiKey);
     if (!apiKey) return [];
 
+    console.log('[Gemini] calling API...');
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
@@ -946,9 +948,11 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
         }),
       }
     );
+    console.log('[Gemini] response status:', response.status);
 
     if (!response.ok) return [];
     const data = await response.json();
+    console.log('[Gemini] raw data:', JSON.stringify(data).slice(0, 500));
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     console.log('[Gemini] raw response:', text);
     const clean = text.replace(/```json|```/g, '').trim();
