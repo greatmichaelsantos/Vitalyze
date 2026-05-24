@@ -1,13 +1,17 @@
 import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Dimensions, Animated, StatusBar, SafeAreaView, ActivityIndicator,
+  Dimensions, Animated, StatusBar, SafeAreaView, ActivityIndicator, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../utils/colors';
 import { Typography, Spacing, Radius, MIN_TOUCH, STORAGE_KEYS } from '../../utils/constants';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { useTheme } from '../../context/ThemeContext';
+
+const gcLogo  = require('../../assets/gc-logo.png');
+const ccsLogo = require('../../assets/ccs-logo.png');
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -47,6 +51,7 @@ export default function OnboardingScreen({ navigation }) {
   const flatListRef  = useRef(null);
   const scrollX      = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
+  const { isDark }   = useTheme();
 
   const handleNext = () => {
     if (currentIndex < SLIDES.length - 1) {
@@ -106,6 +111,15 @@ export default function OnboardingScreen({ navigation }) {
             <View style={[styles.iconCircle, { backgroundColor: item.iconBg }]}>
               <Ionicons name={item.icon} size={64} color={item.iconColor} />
             </View>
+            <View style={styles.brandRow}>
+              <View style={isDark ? styles.logoBg : null}>
+                <Image source={gcLogo}  style={styles.logo} resizeMode="contain" />
+              </View>
+              <View style={isDark ? styles.logoBg : null}>
+                <Image source={ccsLogo} style={styles.logo} resizeMode="contain" />
+              </View>
+            </View>
+            <Text style={styles.brandText}>Gordon College • College of Computer Studies</Text>
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
           </View>
@@ -211,6 +225,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 0,
+  },
+  logo: {
+    width: 50,
+    height: 50,
+    marginHorizontal: 8,
+  },
+  logoBg: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 4,
+    marginHorizontal: 8,
+  },
+  brandText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: -Spacing.sm,
   },
   slideTitle: {
     ...Typography.h2,
