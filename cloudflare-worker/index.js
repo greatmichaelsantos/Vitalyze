@@ -463,7 +463,7 @@ async function generateCustomToken(uid, serviceAccountEmail, privateKey) {
   const payload = base64url(JSON.stringify({
     iss: serviceAccountEmail,
     sub: serviceAccountEmail,
-    aud: 'https://identitytoolkit.googleapis.com/google.identity.openidconnect.v1.token',
+    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
     iat: now,
     exp: now + 3600,
     uid,
