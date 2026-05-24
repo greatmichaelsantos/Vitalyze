@@ -978,7 +978,7 @@ export async function generateDailyAISummary(checkInData, scores, detectedPatter
             content: `You are a warm, supportive wellness advisor inside a health app called Mend.
 Your job is to generate personalized, specific daily health commentary based on what the user logged today.
 Never be generic. Always reference their specific data.
-Keep dailySummary to maximum 2 sentences only. Be concise.
+Keep dailySummary to STRICTLY 2 sentences maximum. No more than 2 sentences. Be very concise and direct.
 Respond in JSON only, no markdown.`,
           },
           {

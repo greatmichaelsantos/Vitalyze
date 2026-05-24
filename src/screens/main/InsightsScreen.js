@@ -427,16 +427,8 @@ function PersonalizedRecommendations({ recommendations, colors }) {
     <View style={prStyles.wrapper}>
       <SubsectionLabel label="Personalized for You 🎯" count={recommendations.length} accentColor={colors.mentalAccent} colors={colors} />
       {recommendations.map((rec, i) => (
-        <View
-          key={i}
-          style={[prStyles.card, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftColor: colors.mentalAccent }]}
-        >
-          <View style={prStyles.cardHeader}>
-            <View style={[prStyles.iconWrap, { backgroundColor: colors.mentalAccent + '22' }]}>
-              <Ionicons name="sparkles-outline" size={16} color={colors.mentalAccent} />
-            </View>
-            <Text style={[prStyles.recTitle, { color: colors.textPrimary }]}>{rec.title}</Text>
-          </View>
+        <View key={i} style={prStyles.card}>
+          <Text style={[prStyles.recTitle, { color: colors.primary }]}>✨ {rec.title}</Text>
           <Text style={[prStyles.recBody, { color: colors.textSecondary }]}>{rec.body}</Text>
         </View>
       ))}
@@ -447,28 +439,14 @@ function PersonalizedRecommendations({ recommendations, colors }) {
 const prStyles = StyleSheet.create({
   wrapper: { gap: Spacing.xs },
   card: {
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderLeftWidth: 4,
-    padding: Spacing.md,
-    gap: Spacing.sm,
+    backgroundColor: '#F5F3FF',
+    borderRadius: 12,
+    padding: 16,
+    gap: Spacing.xs,
     marginBottom: Spacing.sm,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  iconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   recTitle: {
     ...Typography.h4,
-    flexShrink: 1,
     fontWeight: '700',
   },
   recBody: {
