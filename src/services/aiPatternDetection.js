@@ -913,38 +913,33 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
       );
     if (!hasContent) return [];
 
-    const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
     if (!apiKey) return [];
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 512,
-        system:
-          'You are a wellness advisor inside a health app called Mend. The user has just completed a daily check-in. Based on their responses and health scores, give 2-3 short, warm, actionable wellness recommendations. Be specific to what they shared — not generic. Keep each recommendation to 1-2 sentences. Respond in JSON format only: { "recommendations": [{ "title": "...", "body": "..." }] }',
-        messages: [
-          {
-            role: 'user',
-            content:
-              `The user wrote the following in their check-in:\n\n${JSON.stringify(openEndedResponses)}\n\n` +
-              `Their scores today: Overall ${scores.overallScore}/100, Physical ${scores.physicalScore}/100, Mental ${scores.mentalScore}/100.\n\n` +
-              `Give personalized recommendations based specifically on what they shared.`,
-          },
-        ],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text:
+                `You are a wellness advisor inside a health app called Mend. The user has just completed a daily check-in. Based on their responses and health scores, give 2-3 short, warm, actionable wellness recommendations. Be specific to what they shared — not generic. Keep each recommendation to 1-2 sentences. Respond in JSON format only with no markdown: { "recommendations": [{ "title": "...", "body": "..." }] }\n\n` +
+                `The user wrote:\n${JSON.stringify(openEndedResponses)}\n\n` +
+                `Scores: Overall ${scores.overallScore}/100, Physical ${scores.physicalScore}/100, Mental ${scores.mentalScore}/100.`,
+            }],
+          }],
+        }),
+      }
+    );
 
     if (!response.ok) return [];
     const data = await response.json();
-    const text = data?.content?.[0]?.text ?? '';
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed?.recommendations) ? parsed.recommendations : [];
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    return parsed.recommendations || [];
   } catch {
     return [];
   }
