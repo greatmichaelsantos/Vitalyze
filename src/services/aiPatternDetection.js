@@ -956,6 +956,86 @@ export const generatePersonalizedRecommendations = async (openEndedResponses, sc
 };
 
 // ────────────────────────────────────────────────────────────
+// SECTION 7b: DAILY AI SUMMARY
+// ────────────────────────────────────────────────────────────
+
+export async function generateDailyAISummary(checkInData, scores, detectedPatterns) {
+  const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a warm, supportive wellness advisor inside a health app called Mend.
+Your job is to generate personalized, specific daily health commentary based on what the user logged today.
+Never be generic. Always reference their specific data.
+Respond in JSON only, no markdown.`,
+          },
+          {
+            role: 'user',
+            content: `Here is the user's check-in data for today:
+
+SCORES:
+- Overall: ${scores.overallScore}/100
+- Physical: ${scores.physicalScore}/100
+- Mental: ${scores.mentalScore}/100
+
+PHYSICAL DATA:
+- Sleep hours: ${checkInData.sleepHours}
+- Sleep quality: ${checkInData.sleepQuality}
+- Exercise minutes: ${checkInData.exerciseMinutes || 0}
+- Hydration glasses: ${checkInData.hydrationGlasses || checkInData.waterIntake}
+- Meal type: ${checkInData.mealType || checkInData.dietQuality}
+- Meal details: ${checkInData.mealDetails || 'not specified'}
+- Caffeine: ${checkInData.caffeineIntake || 'none'}
+- Alcohol: ${checkInData.alcoholIntake || 'none'}
+
+MENTAL DATA:
+- Mood (1-5): ${checkInData.mood}
+- Stress level (1-5): ${checkInData.stressLevel}
+- Anxiety level: ${checkInData.anxietyLevel}
+
+DETECTED PATTERNS: ${detectedPatterns.map((p) => p.name || p.pattern).join(', ')}
+
+WHAT THE USER WROTE:
+${checkInData.openEndedResponses ? Object.entries(checkInData.openEndedResponses).map(([q, a]) => `- ${q}: "${a}"`).join('\n') : 'Nothing written'}
+
+Generate a JSON response with these exact keys:
+{
+  "dailySummary": "2-3 sentence personalized summary of how their day looks overall, referencing their specific numbers and what they wrote",
+  "mealInsight": "1-2 sentences specifically about their meal choice and what it means for their energy and health today",
+  "patternInsights": {
+    "<pattern_name>": "1-2 sentence personalized explanation of this pattern specific to their data today"
+  },
+  "scoreInsight": "1 sentence explaining their specific score combination today in plain language"
+}`,
+          },
+        ],
+        temperature: 0.8,
+        max_tokens: 800,
+      }),
+    });
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '{}';
+    const clean = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch (e) {
+    console.error('[DailyAI] error:', e);
+    return null;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
 // SECTION 8: MAIN ANALYSIS ENTRY POINT
 // ────────────────────────────────────────────────────────────
 

@@ -80,8 +80,15 @@ export default function InsightsScreen({ navigation }) {
 
   if (loading) return <LoadingSpinner fullScreen message="Loading insights…" />;
 
-  const physicalPatterns    = insight?.patterns?.filter((p) => PHYSICAL_CATEGORIES.has(p.category)) ?? [];
-  const mentalPatterns      = insight?.patterns?.filter((p) => !PHYSICAL_CATEGORIES.has(p.category)) ?? [];
+  const ai = insight?.dailyAISummary;
+  const enrichPatterns = (patterns) =>
+    patterns.map((p) => ({
+      ...p,
+      description: ai?.patternInsights?.[p.name] || p.description,
+    }));
+
+  const physicalPatterns    = enrichPatterns(insight?.patterns?.filter((p) => PHYSICAL_CATEGORIES.has(p.category)) ?? []);
+  const mentalPatterns      = enrichPatterns(insight?.patterns?.filter((p) => !PHYSICAL_CATEGORIES.has(p.category)) ?? []);
   const physicalSuggestions = insight?.suggestions?.filter((s) => PHYSICAL_SUGGESTION_IDS.has(s.id)) ?? [];
   const mentalSuggestions   = insight?.suggestions?.filter((s) => !PHYSICAL_SUGGESTION_IDS.has(s.id)) ?? [];
   const allFactors          = insight?.nodeWeights ? generateRiskFactors(insight.nodeWeights) : [];
@@ -139,6 +146,8 @@ export default function InsightsScreen({ navigation }) {
           />
         ) : (
           <>
+            <DailySummaryCard summary={ai?.dailySummary} colors={colors} />
+
             {/* Overall summary card */}
             <View style={styles.summaryCard}>
               <View style={styles.scoreRow}>
@@ -148,6 +157,9 @@ export default function InsightsScreen({ navigation }) {
                 <HealthScoreRing score={insight.mentalScore}   label="Mental"   size={88}  strokeWidth={9} />
               </View>
               <OverallRiskPill riskLevel={insight.riskLevel} colors={colors} />
+              {!!ai?.scoreInsight && (
+                <Text style={[aiStyles.scoreInsight, { color: colors.textSecondary }]}>{ai.scoreInsight}</Text>
+              )}
               {overallAlerts.map((a) => <AlertCard key={a.id} alert={a} />)}
             </View>
 
@@ -183,6 +195,8 @@ export default function InsightsScreen({ navigation }) {
               factors={mentalFactors}
               colors={colors}
             />
+
+            <MealInsightCard mealInsight={ai?.mealInsight} colors={colors} />
 
             {console.log('[Insights] personalizedRecommendations:', insight?.personalizedRecommendations)}
             {Array.isArray(insight.personalizedRecommendations) &&
@@ -358,6 +372,55 @@ function DomainFactors({ factors, accentColor, colors }) {
     </View>
   );
 }
+
+function DailySummaryCard({ summary, colors }) {
+  if (!summary) return null;
+  return (
+    <View style={[aiStyles.summaryCard, { backgroundColor: colors.mentalLight, borderColor: colors.mentalAccent + '40' }]}>
+      <View style={aiStyles.summaryHeader}>
+        <Text style={aiStyles.summaryIcon}>✨</Text>
+        <Text style={[aiStyles.summaryTitle, { color: colors.mentalAccent }]}>Today's Overview</Text>
+      </View>
+      <Text style={[aiStyles.summaryText, { color: colors.textPrimary }]}>{summary}</Text>
+    </View>
+  );
+}
+
+function MealInsightCard({ mealInsight, colors }) {
+  if (!mealInsight) return null;
+  return (
+    <View style={[aiStyles.mealCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Text style={[aiStyles.mealTitle, { color: colors.textPrimary }]}>🍽️ Today's Meal</Text>
+      <Text style={[aiStyles.mealText, { color: colors.textSecondary }]}>{mealInsight}</Text>
+    </View>
+  );
+}
+
+const aiStyles = StyleSheet.create({
+  summaryCard: {
+    borderRadius: Radius.lg,
+    borderWidth: 1.5,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  summaryIcon: { fontSize: 18 },
+  summaryTitle: { ...Typography.h4, fontWeight: '700' },
+  summaryText:  { ...Typography.body, lineHeight: 22 },
+  scoreInsight: { ...Typography.bodySmall, fontStyle: 'italic', textAlign: 'center' },
+  mealCard: {
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  mealTitle: { ...Typography.h4, fontWeight: '700' },
+  mealText:  { ...Typography.bodySmall, lineHeight: 20 },
+});
 
 function PersonalizedRecommendations({ recommendations, colors }) {
   return (

@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../../firebase';
 import { COLLECTIONS, STORAGE_KEYS } from '../utils/constants';
 import { buildGraph, mergeGraphHistory } from './knowledgeGraphEngine';
-import { analyzeHealthData, generatePersonalizedRecommendations } from './aiPatternDetection';
+import { analyzeHealthData, generatePersonalizedRecommendations, generateDailyAISummary } from './aiPatternDetection';
 
 // ────────────────────────────────────────────────────────────
 // HEALTH LOGS
@@ -73,6 +73,14 @@ export const saveCheckIn = async (userId, checkInData) => {
   console.log('[Groq] recommendations result:', JSON.stringify(personalizedRecommendations));
   console.log('[Groq] saving recommendations:', personalizedRecommendations.length);
 
+  // 5c. Generate daily AI summary (non-fatal)
+  const dailyAISummary = await generateDailyAISummary(
+    checkInData,
+    analysis,
+    analysis.patterns || []
+  );
+  console.log('[DailyAI] summary result:', JSON.stringify(dailyAISummary)?.slice(0, 200));
+
   // 6. Save insights
   const insightRef = await addDoc(collection(db, COLLECTIONS.INSIGHTS), {
     userId,
@@ -80,6 +88,7 @@ export const saveCheckIn = async (userId, checkInData) => {
     logId: logRef.id,
     ...analysis,
     personalizedRecommendations,
+    dailyAISummary,
     createdAt: serverTimestamp(),
   });
 
@@ -89,7 +98,7 @@ export const saveCheckIn = async (userId, checkInData) => {
     insightId: insightRef.id,
     date,
     checkIn: checkInData,
-    analysis: { ...analysis, personalizedRecommendations },
+    analysis: { ...analysis, personalizedRecommendations, dailyAISummary },
     graph,
   };
 
