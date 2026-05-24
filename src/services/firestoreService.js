@@ -93,7 +93,8 @@ export const saveCheckIn = async (userId, checkInData) => {
     graph,
   };
 
-  // 7. Cache latest insights locally
+  // 7. Cache latest insights locally (bust stale cache first)
+  await AsyncStorage.removeItem(STORAGE_KEYS.CACHED_INSIGHTS);
   await AsyncStorage.setItem(
     STORAGE_KEYS.CACHED_INSIGHTS,
     JSON.stringify(result)
