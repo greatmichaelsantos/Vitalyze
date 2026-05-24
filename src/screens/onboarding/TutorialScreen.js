@@ -140,18 +140,18 @@ export default function TutorialScreen({ navigation, route }) {
         pointerEvents={Platform.OS === 'web' ? 'box-none' : 'auto'}
         accessible={false}
       >
-        <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
-          {currentIndex === 0
-            ? <Image
-                source={require('../../assets/icon.png')}
-                style={{ width: 80, height: 80, borderRadius: 20 }}
-                accessibilityElementsHidden={true}
-              />
-            : <Text style={styles.slideEmoji} accessibilityElementsHidden={true}>
+        {currentIndex === 0
+          ? <Image
+              source={require('../../assets/icon.png')}
+              style={{ width: 120, height: 120, borderRadius: 20 }}
+              accessibilityElementsHidden={true}
+            />
+          : <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
+              <Text style={styles.slideEmoji} accessibilityElementsHidden={true}>
                 {slide.icon}
               </Text>
-          }
-        </View>
+            </View>
+        }
         <Text
           style={[styles.slideTitle, { color: colors.textPrimary }]}
           maxFontSizeMultiplier={1.3}

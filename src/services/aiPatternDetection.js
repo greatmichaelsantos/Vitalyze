@@ -896,7 +896,62 @@ export const generateRiskFactors = (nodeWeights) => {
 };
 
 // ────────────────────────────────────────────────────────────
-// SECTION 7: MAIN ANALYSIS ENTRY POINT
+// SECTION 7: AI-POWERED PERSONALIZED RECOMMENDATIONS
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Call the Claude API with the user's open-ended check-in text and today's
+ * health scores. Returns 2-3 personalised recommendation objects, or [] on
+ * any failure so the caller is never blocked.
+ */
+export const generatePersonalizedRecommendations = async (openEndedResponses, scores) => {
+  try {
+    const hasContent =
+      openEndedResponses &&
+      Object.values(openEndedResponses).some(
+        (v) => typeof v === 'string' && v.trim().length > 0
+      );
+    if (!hasContent) return [];
+
+    const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
+    if (!apiKey) return [];
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 512,
+        system:
+          'You are a wellness advisor inside a health app called Mend. The user has just completed a daily check-in. Based on their responses and health scores, give 2-3 short, warm, actionable wellness recommendations. Be specific to what they shared — not generic. Keep each recommendation to 1-2 sentences. Respond in JSON format only: { "recommendations": [{ "title": "...", "body": "..." }] }',
+        messages: [
+          {
+            role: 'user',
+            content:
+              `The user wrote the following in their check-in:\n\n${JSON.stringify(openEndedResponses)}\n\n` +
+              `Their scores today: Overall ${scores.overallScore}/100, Physical ${scores.physicalScore}/100, Mental ${scores.mentalScore}/100.\n\n` +
+              `Give personalized recommendations based specifically on what they shared.`,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return [];
+    const data = await response.json();
+    const text = data?.content?.[0]?.text ?? '';
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed?.recommendations) ? parsed.recommendations : [];
+  } catch {
+    return [];
+  }
+};
+
+// ────────────────────────────────────────────────────────────
+// SECTION 8: MAIN ANALYSIS ENTRY POINT
 // ────────────────────────────────────────────────────────────
 
 const OPEN_ENDED_LABELS = {

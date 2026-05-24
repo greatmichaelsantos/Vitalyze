@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../../firebase';
 import { COLLECTIONS, STORAGE_KEYS } from '../utils/constants';
 import { buildGraph, mergeGraphHistory } from './knowledgeGraphEngine';
-import { analyzeHealthData } from './aiPatternDetection';
+import { analyzeHealthData, generatePersonalizedRecommendations } from './aiPatternDetection';
 
 // ────────────────────────────────────────────────────────────
 // HEALTH LOGS
@@ -65,12 +65,19 @@ export const saveCheckIn = async (userId, checkInData) => {
   // 5. Run AI analysis
   const analysis = analyzeHealthData(checkInData, graph, userProfile);
 
+  // 5b. Generate Claude-powered personalised recommendations (non-fatal)
+  const personalizedRecommendations = await generatePersonalizedRecommendations(
+    checkInData.openEndedResponses,
+    analysis
+  );
+
   // 6. Save insights
   const insightRef = await addDoc(collection(db, COLLECTIONS.INSIGHTS), {
     userId,
     date,
     logId: logRef.id,
     ...analysis,
+    personalizedRecommendations,
     createdAt: serverTimestamp(),
   });
 
@@ -80,7 +87,7 @@ export const saveCheckIn = async (userId, checkInData) => {
     insightId: insightRef.id,
     date,
     checkIn: checkInData,
-    analysis,
+    analysis: { ...analysis, personalizedRecommendations },
     graph,
   };
 

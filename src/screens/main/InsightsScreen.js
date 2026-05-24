@@ -183,6 +183,14 @@ export default function InsightsScreen({ navigation }) {
               factors={mentalFactors}
               colors={colors}
             />
+
+            {Array.isArray(insight.personalizedRecommendations) &&
+              insight.personalizedRecommendations.length > 0 && (
+                <PersonalizedRecommendations
+                  recommendations={insight.personalizedRecommendations}
+                  colors={colors}
+                />
+              )}
           </>
         )}
       </ScrollView>
@@ -349,6 +357,71 @@ function DomainFactors({ factors, accentColor, colors }) {
     </View>
   );
 }
+
+function PersonalizedRecommendations({ recommendations, colors }) {
+  return (
+    <View style={[prStyles.container, { backgroundColor: colors.mentalLight, borderColor: colors.mentalAccent + '40' }]}>
+      <View style={prStyles.header}>
+        <View style={[prStyles.iconWrap, { backgroundColor: colors.mentalAccent + '22' }]}>
+          <Ionicons name="sparkles-outline" size={18} color={colors.mentalAccent} />
+        </View>
+        <Text style={[prStyles.title, { color: colors.mentalAccent }]}>Personalized for You 🎯</Text>
+      </View>
+      {recommendations.map((rec, i) => (
+        <View
+          key={i}
+          style={[
+            prStyles.card,
+            { backgroundColor: colors.surface, borderColor: colors.mentalAccent + '30' },
+          ]}
+        >
+          <Text style={[prStyles.recTitle, { color: colors.textPrimary }]}>{rec.title}</Text>
+          <Text style={[prStyles.recBody,  { color: colors.textSecondary }]}>{rec.body}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const prStyles = StyleSheet.create({
+  container: {
+    borderRadius: Radius.lg,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    ...Typography.h4,
+    fontWeight: '700',
+  },
+  card: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    padding: Spacing.md,
+    gap: Spacing.xs,
+  },
+  recTitle: {
+    ...Typography.label,
+    fontWeight: '700',
+  },
+  recBody: {
+    ...Typography.bodySmall,
+    lineHeight: 20,
+  },
+});
 
 const makeStyles = (c, f) => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: c.background },
