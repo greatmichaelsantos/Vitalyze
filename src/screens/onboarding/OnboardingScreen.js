@@ -94,15 +94,17 @@ export default function OnboardingScreen({ navigation }) {
       </View>
 
       {/* Institutional branding — fixed above slides */}
-      <View style={styles.brandRow}>
-        <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
-          <Image source={gcLogo}  style={styles.logo} resizeMode="contain" />
+      <View style={[styles.brandBlock, { backgroundColor: 'red' }]}>
+        <View style={styles.brandRow}>
+          <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
+            <Image source={gcLogo}  style={styles.logo} resizeMode="contain" />
+          </View>
+          <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
+            <Image source={ccsLogo} style={styles.logo} resizeMode="contain" />
+          </View>
         </View>
-        <View style={[styles.logoClip, isDark && { backgroundColor: 'white' }]}>
-          <Image source={ccsLogo} style={styles.logo} resizeMode="contain" />
-        </View>
+        <Text style={styles.brandText}>Gordon College • College of Computer Studies</Text>
       </View>
-      <Text style={styles.brandText}>Gordon College • College of Computer Studies</Text>
 
       {/* Slides */}
       <Animated.FlatList
@@ -228,11 +230,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
+  brandBlock: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    minHeight: 72,
+  },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: Spacing.sm,
   },
   logoClip: {
     width: 50,
